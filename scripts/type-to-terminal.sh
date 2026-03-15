@@ -27,7 +27,7 @@ on run argv
                     end if
                     set frontmost of w to true
                     activate
-                    delay 0.3
+                    delay 0.5
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke msg
@@ -56,7 +56,7 @@ on run argv
                     end if
                     set frontmost of w to true
                     activate
-                    delay 0.3
+                    delay 0.5
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke msg

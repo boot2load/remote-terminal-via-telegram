@@ -14,7 +14,12 @@ for pidfile in "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid"; do
     OLD_PID=$(cat "$pidfile")
     if [[ "$OLD_PID" =~ ^[0-9]+$ ]] && [ "$OLD_PID" -gt 1 ] && kill -0 "$OLD_PID" 2>/dev/null; then
       kill "$OLD_PID" 2>/dev/null || true
-      sleep 0.5
+      # Wait up to 3 seconds for graceful exit
+      for _ in 1 2 3 4 5 6; do
+        kill -0 "$OLD_PID" 2>/dev/null || break
+        sleep 0.5
+      done
+      # Force kill if still alive
       kill -9 "$OLD_PID" 2>/dev/null || true
     fi
     rm -f "$pidfile"
