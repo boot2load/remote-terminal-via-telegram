@@ -37,14 +37,34 @@ def get_from_keychain(account):
     return None
 
 
+def get_from_secret_tool(account):
+    """Retrieve a secret from GNOME Keyring / libsecret (Linux only)."""
+    if not IS_LINUX:
+        return None
+    try:
+        result = subprocess.run(
+            ["secret-tool", "lookup", "service", "remote-terminal-telegram", "account", account],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
 use_keychain = config.get("security", {}).get("use_keychain", False) and IS_MACOS
+use_secret_tool = config.get("security", {}).get("use_secret_tool", False) and IS_LINUX
 BOT_TOKEN = ""
 if use_keychain:
     BOT_TOKEN = get_from_keychain("bot_token") or ""
-if not BOT_TOKEN or BOT_TOKEN == "STORED_IN_KEYCHAIN":
+elif use_secret_tool:
+    BOT_TOKEN = get_from_secret_tool("bot_token") or ""
+if not BOT_TOKEN or BOT_TOKEN in ("STORED_IN_KEYCHAIN", "STORED_IN_SECRET_TOOL"):
     BOT_TOKEN = config["telegram"].get("bot_token", "")
-if not BOT_TOKEN or BOT_TOKEN == "STORED_IN_KEYCHAIN":
-    print("ERROR: Bot token not found in Keychain or config.json", file=sys.stderr)
+if not BOT_TOKEN or BOT_TOKEN in ("STORED_IN_KEYCHAIN", "STORED_IN_SECRET_TOOL"):
+    store = "Keychain" if IS_MACOS else "secret-tool"
+    print(f"ERROR: Bot token not found in {store} or config.json", file=sys.stderr)
     sys.exit(1)
 
 CHAT_ID = config["telegram"]["chat_id"]

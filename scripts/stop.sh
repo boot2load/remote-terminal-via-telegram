@@ -9,6 +9,8 @@ source "$SCRIPT_DIR/load-config.sh"
 LOG_FILE="$RTVT_DIR/daemon.log"
 
 # Send shutdown message (hide token)
+# Escape Markdown special chars in PROJECT_NAME to prevent parse failures
+SAFE_NAME=$(printf '%s' "$PROJECT_NAME" | sed 's/[_*\[`]/\\&/g')
 _URL_FILE=$(mktemp)
 chmod 600 "$_URL_FILE"
 echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\"" > "$_URL_FILE"
@@ -16,7 +18,7 @@ curl -s -K "$_URL_FILE" \
   -H "Content-Type: application/json" \
   -d "{
     \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-    \"text\": \"🔴 *Remote Terminal Deactivated*\n${PROJECT_NAME} session monitoring stopped.\nRun /terminal-control-start to reconnect.\",
+    \"text\": \"🔴 *Remote Terminal Deactivated*\n${SAFE_NAME} session monitoring stopped.\nRun /terminal-control-start to reconnect.\",
     \"parse_mode\": \"Markdown\",
     \"reply_markup\": {
       \"keyboard\": [
@@ -45,6 +47,7 @@ for pidfile in "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid"; do
   fi
 done
 rm -rf "$RTVT_DIR/.poll.lock"
+rm -f "$RTVT_DIR/.poll.flock" 2>/dev/null || true
 rm -f "$RTVT_DIR/inbox"/*.txt 2>/dev/null || true
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') Session stopped" >> "$LOG_FILE"

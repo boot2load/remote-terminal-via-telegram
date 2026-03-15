@@ -13,7 +13,15 @@ OS_TYPE="$(uname -s)"
 
 if [ "$OS_TYPE" = "Darwin" ]; then
   # ── macOS: AppleScript keystroke injection ──
-  MESSAGE_ESCAPED=$(echo "$MESSAGE" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  # Check Accessibility permissions (System Events requires it for keystrokes)
+  if ! osascript -e 'tell application "System Events" to return name of first process' &>/dev/null; then
+    echo "ERROR: Terminal.app needs Accessibility permissions." >&2
+    echo "  Go to: System Settings > Privacy & Security > Accessibility" >&2
+    echo "  Enable Terminal.app (or your terminal emulator)" >&2
+    exit 1
+  fi
+  # Escape backslashes, double quotes, tabs, and newlines for AppleScript
+  MESSAGE_ESCAPED=$(printf '%s' "$MESSAGE" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\t' ' ' | tr '\n' ' ')
 
   if [ -n "$WINDOW_MATCH" ]; then
     osascript - "$WINDOW_MATCH" "$MESSAGE_ESCAPED" <<'EOF'

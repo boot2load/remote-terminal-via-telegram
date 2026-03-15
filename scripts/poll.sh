@@ -347,7 +347,7 @@ for m in messages:
             -d text="🎙 Transcribing..." \
             -d disable_notification=true > /dev/null 2>&1
 
-          _VOICE_TMP=$(mktemp "$RTVT_DIR/.voice_result_XXXXXX.txt")
+          _VOICE_TMP=$(mktemp "$RTVT_DIR/.voice_result_XXXXXX")
           chmod 600 "$_VOICE_TMP"
           "$SCRIPT_DIR/transcribe-voice.sh" "$FILE_ID" > "$_VOICE_TMP" 2>/dev/null || true
           TRANSCRIBED=$(cat "$_VOICE_TMP" 2>/dev/null | head -1)
@@ -453,7 +453,8 @@ Press ❌ 3. No to cancel" \
       INBOX_FILE=$(mktemp "$RTVT_DIR/inbox/msg_XXXXXXXXXX.txt" 2>/dev/null) || continue
       chmod 600 "$INBOX_FILE"
       # Strip terminal escape sequences before writing
-      printf '%s' "$MSG" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$INBOX_FILE"
+      _ESC=$(printf '\033')
+      printf '%s' "$MSG" | sed "s/${_ESC}\[[0-9;]*[A-Za-z]//g" > "$INBOX_FILE"
     done
   fi
 

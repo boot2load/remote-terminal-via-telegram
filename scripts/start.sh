@@ -47,12 +47,14 @@ nohup "$RTVT_DIR/scripts/poll.sh" >> "$LOG_FILE" 2>&1 &
 nohup python3 "$RTVT_DIR/scripts/terminal-watcher.py" >> "$LOG_FILE" 2>&1 &
 
 # Send activation message with keyboard (hide token)
+# Escape Markdown special chars in PROJECT_NAME to prevent parse failures
+SAFE_NAME=$(printf '%s' "$PROJECT_NAME" | sed 's/[_*\[`]/\\&/g')
 echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\"" > "$_URL_FILE"
 curl -s -K "$_URL_FILE" \
   -H "Content-Type: application/json" \
   -d "{
     \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-    \"text\": \"🟢 *Remote Terminal Activated*\n${PROJECT_NAME} session is now being monitored.\nUse the buttons below or type a message to send to the terminal.\",
+    \"text\": \"🟢 *Remote Terminal Activated*\n${SAFE_NAME} session is now being monitored.\nUse the buttons below or type a message to send to the terminal.\",
     \"parse_mode\": \"Markdown\",
     \"reply_markup\": {
       \"keyboard\": [

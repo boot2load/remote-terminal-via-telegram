@@ -14,7 +14,8 @@ for f in "$INBOX"/*.txt; do
   [ -f "$f" ] || continue
   FOUND=true
   # Strip terminal escape sequences for safety
-  MSG=$(cat "$f" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')
+  ESC=$(printf '\033')
+  MSG=$(cat "$f" | sed "s/${ESC}\[[0-9;]*[A-Za-z]//g")
   printf '\033[35m📩 Telegram: %s\033[0m\n' "$MSG"
   rm "$f"
 done
