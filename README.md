@@ -2,6 +2,12 @@
 
 Control any Claude Code terminal session remotely via Telegram. Mirror terminal output, send commands, approve/reject actions, and use voice input — all from your phone.
 
+<p align="center">
+  <img src="demo/telegram-screenshot.jpg" alt="Remote Terminal Control via Telegram" width="360" />
+  <br/>
+  <em>Remote Terminal Control — approve actions, view progress, and send commands from Telegram</em>
+</p>
+
 ## Features
 
 - **Two-way sync**: Terminal output → Telegram, Telegram input → Terminal
