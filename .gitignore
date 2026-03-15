@@ -1,0 +1,12 @@
+config.json
+.env
+.venv/
+.active
+.poll.pid
+.watcher.pid
+.last_update_id
+.pending_voice.txt
+.voice_result.txt
+terminal.log
+inbox/
+__pycache__/
