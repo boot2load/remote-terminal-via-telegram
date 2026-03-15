@@ -68,18 +68,21 @@ echo "  ✅ Chat ID: ${CHAT_ID}"
 echo ""
 
 # --- Project Config ---
-echo "Step 3: Project"
-read -rp "  Project name (e.g., MyApp): " PROJECT_NAME
-read -rp "  Project working directory (full path): " PROJECT_DIR
+echo "Step 3: Project (optional — leave blank to work with any Claude Code terminal)"
+read -rp "  Display name for Telegram messages (default: Terminal): " PROJECT_NAME
+PROJECT_NAME="${PROJECT_NAME:-Terminal}"
 
-if [ ! -d "$PROJECT_DIR" ]; then
+read -rp "  Project working directory for slash commands (blank = skip): " PROJECT_DIR
+
+if [ -n "$PROJECT_DIR" ] && [ ! -d "$PROJECT_DIR" ]; then
   echo "  ⚠️  Directory doesn't exist: ${PROJECT_DIR}"
   read -rp "  Continue anyway? (y/n): " CONT
   [ "$CONT" = "y" ] || exit 1
 fi
 
-read -rp "  Terminal window match string (default: ${PROJECT_NAME}): " WINDOW_MATCH
-WINDOW_MATCH="${WINDOW_MATCH:-$PROJECT_NAME}"
+echo "  Window match string: restricts the bot to a specific Terminal window."
+echo "  Leave blank to control ANY Claude Code terminal (recommended)."
+read -rp "  Window match string (blank = any Claude Code window): " WINDOW_MATCH
 echo ""
 
 # --- Voice ---
@@ -167,19 +170,27 @@ print("  ✅ Model cached")
 fi
 
 # --- Install slash commands ---
-echo "Installing Claude Code slash commands into ${PROJECT_DIR}..."
-mkdir -p "${PROJECT_DIR}/.claude/commands"
+# Install to user-level Claude commands (works with any project)
+echo "Installing Claude Code slash commands..."
+mkdir -p "$HOME/.claude/commands"
 
-# Generate start command
 sed "s|~/remote-terminal-via-telegram|${RTVT_DIR}|g" \
   "$RTVT_DIR/commands/terminal-control-start.md" \
-  > "${PROJECT_DIR}/.claude/commands/terminal-control-start.md"
+  > "$HOME/.claude/commands/terminal-control-start.md"
 
 sed "s|~/remote-terminal-via-telegram|${RTVT_DIR}|g" \
   "$RTVT_DIR/commands/terminal-control-end.md" \
-  > "${PROJECT_DIR}/.claude/commands/terminal-control-end.md"
+  > "$HOME/.claude/commands/terminal-control-end.md"
 
-echo "✅ Slash commands installed"
+# Also install to specific project if provided
+if [ -n "$PROJECT_DIR" ] && [ -d "$PROJECT_DIR" ]; then
+  mkdir -p "${PROJECT_DIR}/.claude/commands"
+  cp "$HOME/.claude/commands/terminal-control-start.md" "${PROJECT_DIR}/.claude/commands/"
+  cp "$HOME/.claude/commands/terminal-control-end.md" "${PROJECT_DIR}/.claude/commands/"
+  echo "✅ Slash commands installed (user-level + ${PROJECT_DIR})"
+else
+  echo "✅ Slash commands installed (user-level — works in any project)"
+fi
 
 # --- Make scripts executable ---
 chmod +x "$RTVT_DIR"/scripts/*.sh "$RTVT_DIR"/scripts/*.py 2>/dev/null || true
@@ -200,10 +211,10 @@ echo "║  Setup Complete!                         ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "  Bot:       @${BOT_NAME}"
-echo "  Project:   ${PROJECT_NAME}"
-echo "  Directory: ${PROJECT_DIR}"
+echo "  Name:      ${PROJECT_NAME}"
+echo "  Window:    ${WINDOW_MATCH:-any Claude Code terminal}"
 echo "  Voice:     ${VOICE_BACKEND}"
 echo ""
-echo "  To start: launch Claude Code in ${PROJECT_DIR}"
+echo "  To start: launch Claude Code in any project"
 echo "  and type /terminal-control-start"
 echo ""

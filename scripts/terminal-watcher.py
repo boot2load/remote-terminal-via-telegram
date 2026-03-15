@@ -20,15 +20,16 @@ with open(CONFIG_FILE) as f:
 
 BOT_TOKEN = config["telegram"]["bot_token"]
 CHAT_ID = config["telegram"]["chat_id"]
-PROJECT_NAME = config["project"]["name"]
-WINDOW_MATCH = config["project"]["window_match_string"]
+PROJECT_NAME = config.get("project", {}).get("name", "Terminal")
+WINDOW_MATCH = config.get("project", {}).get("window_match_string", "")
 MAX_MSG_LEN = 3900
 
 with open(PID_FILE, "w") as f:
     f.write(str(os.getpid()))
 
-# AppleScript receives WINDOW_MATCH via argv to prevent injection
-APPLESCRIPT = '''
+# AppleScript: if WINDOW_MATCH is empty, match ANY Claude Code window
+# WINDOW_MATCH passed via argv to prevent injection
+APPLESCRIPT_WITH_MATCH = '''
 on run argv
     set matchStr to item 1 of argv
     tell application "Terminal"
@@ -43,6 +44,20 @@ on run argv
         return ""
     end tell
 end run
+'''
+
+APPLESCRIPT_ANY = '''
+tell application "Terminal"
+    repeat with w in windows
+        try
+            set wName to name of w
+            if wName contains "Claude Code" then
+                return contents of tab 1 of w
+            end if
+        end try
+    end repeat
+    return ""
+end tell
 '''
 
 # Secret redaction patterns — masks sensitive data before sending to Telegram
@@ -71,10 +86,16 @@ TABLE_ROW_RE = re.compile(r'^\s*│(.+)│\s*$')
 
 def get_terminal_content():
     try:
-        result = subprocess.run(
-            ["osascript", "-e", APPLESCRIPT, "--", WINDOW_MATCH],
-            capture_output=True, text=True, timeout=5
-        )
+        if WINDOW_MATCH:
+            result = subprocess.run(
+                ["osascript", "-e", APPLESCRIPT_WITH_MATCH, "--", WINDOW_MATCH],
+                capture_output=True, text=True, timeout=5
+            )
+        else:
+            result = subprocess.run(
+                ["osascript", "-e", APPLESCRIPT_ANY],
+                capture_output=True, text=True, timeout=5
+            )
         return result.stdout
     except Exception:
         return ""

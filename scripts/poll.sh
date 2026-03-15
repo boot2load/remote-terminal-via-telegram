@@ -53,7 +53,8 @@ if [ -f "$OFFSET_FILE" ]; then
 fi
 
 send_escape() {
-  osascript - "$WINDOW_MATCH" <<'ASEOF' 2>/dev/null || true
+  if [ -n "$WINDOW_MATCH" ]; then
+    osascript - "$WINDOW_MATCH" <<'ASEOF' 2>/dev/null || true
 on run argv
     set matchStr to item 1 of argv
     tell application "Terminal"
@@ -61,10 +62,7 @@ on run argv
             try
                 set wName to name of w
                 if wName contains matchStr and wName contains "Claude Code" then
-                    if miniaturized of w then
-                        set miniaturized of w to false
-                        delay 0.5
-                    end if
+                    if miniaturized of w then set miniaturized of w to false
                     set frontmost of w to true
                     activate
                     delay 0.3
@@ -80,6 +78,28 @@ on run argv
     end tell
 end run
 ASEOF
+  else
+    osascript <<'ASEOF' 2>/dev/null || true
+tell application "Terminal"
+    repeat with w in windows
+        try
+            if name of w contains "Claude Code" then
+                if miniaturized of w then set miniaturized of w to false
+                set frontmost of w to true
+                activate
+                delay 0.3
+                tell application "System Events"
+                    tell process "Terminal"
+                        key code 53
+                    end tell
+                end tell
+                return
+            end if
+        end try
+    end repeat
+end tell
+ASEOF
+  fi
 }
 
 # Use a netrc-style file to hide token from ps aux

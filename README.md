@@ -120,12 +120,13 @@ All settings are stored in `config.json` (created by `setup.sh`):
 {
   "telegram": {
     "bot_token": "your-bot-token",
-    "chat_id": "your-chat-id"
+    "chat_id": "your-chat-id",
+    "allowed_user_id": "your-telegram-user-id"
   },
   "project": {
-    "name": "MyProject",
-    "working_directory": "/path/to/project",
-    "window_match_string": "MyProject"
+    "name": "Terminal",
+    "working_directory": "",
+    "window_match_string": ""
   },
   "voice": {
     "backend": "mlx-whisper",
@@ -135,9 +136,15 @@ All settings are stored in `config.json` (created by `setup.sh`):
 }
 ```
 
-### Changing Projects
+### Project Settings
 
-Run `./setup.sh` again to reconfigure for a different project, or edit `config.json` directly.
+- **`name`**: Display name in Telegram messages (e.g., "MyApp Terminal")
+- **`working_directory`**: Optional. If set, slash commands are also installed there
+- **`window_match_string`**: Optional. If empty, the bot controls **any** Claude Code terminal window. If set (e.g., "MyApp"), it only matches Terminal windows with that string in the title
+
+### Switching Projects
+
+No reconfiguration needed — if `window_match_string` is empty, the bot automatically follows whichever Claude Code terminal is active. Just `cd` to a different project and the bot keeps working.
 
 ## Architecture
 

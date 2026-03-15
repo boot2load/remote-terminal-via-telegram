@@ -5,9 +5,9 @@
     "allowed_user_id": "YOUR_TELEGRAM_USER_ID"
   },
   "project": {
-    "name": "MyProject",
-    "working_directory": "/path/to/your/project",
-    "window_match_string": "MyProject"
+    "name": "Terminal",
+    "working_directory": "",
+    "window_match_string": ""
   },
   "voice": {
     "backend": "mlx-whisper",
