@@ -583,15 +583,16 @@ def telegram_api(method, params):
         return {"ok": False}
 
 
-def send_message(text):
+def send_message(text, notify=False):
     text = redact_secrets(text)
+    silent = "false" if notify else "true"
     resp = telegram_api("sendMessage", {
         "chat_id": CHAT_ID, "text": text,
-        "parse_mode": "Markdown", "disable_notification": "true",
+        "parse_mode": "Markdown", "disable_notification": silent,
     })
     if not resp.get("ok"):
         resp = telegram_api("sendMessage", {
-            "chat_id": CHAT_ID, "text": text, "disable_notification": "true",
+            "chat_id": CHAT_ID, "text": text, "disable_notification": silent,
         })
     if resp.get("ok"):
         return resp["result"]["message_id"]
@@ -609,6 +610,48 @@ def edit_message(message_id, text):
             "chat_id": CHAT_ID, "message_id": message_id, "text": text,
         })
     return resp.get("ok", False)
+
+
+def detect_notification(turns):
+    """Detect if the current terminal state warrants a phone notification.
+    Returns (should_notify: bool, summary: str).
+    The summary is a short string shown as the first line for phone notifications."""
+    if not turns:
+        return False, ""
+
+    last = turns[-1]
+
+    # Approval prompt → always notify
+    if last.get("type") == "approval":
+        return True, ""  # approval_block handles its own format
+
+    # Check for completion / error signals in Claude's output
+    for turn in reversed(turns[-5:]):
+        if turn.get("type") == "claude":
+            text = turn.get("text", "")
+            text_lower = text.lower()
+            # Error / failure (check first — higher priority)
+            if any(w in text_lower for w in [
+                "error:", "failed", "crash", "exception", "fatal",
+                "permission denied", "not found", "timed out",
+            ]):
+                # Extract first meaningful line as summary
+                first_line = text.split("\n")[0][:80].strip()
+                return True, f"❌ {first_line}"
+            # Task / build completed
+            if any(w in text_lower for w in [
+                "done", "complete", "finished", "all tests pass",
+                "build succeeded", "committed", "pushed", "deployed",
+                "created successfully", "no errors",
+            ]):
+                first_line = text.split("\n")[0][:80].strip()
+                return True, f"✅ {first_line}"
+        if turn.get("type") == "status":
+            text = turn.get("text", "").lower()
+            if "complete" in text or "done" in text or "finished" in text:
+                return True, "✅ Task complete"
+
+    return False, ""
 
 
 def extract_approval_block(raw):
@@ -770,7 +813,7 @@ def main():
             if turns:
                 formatted = format_turns(turns)
                 if formatted:
-                    display = f"{header}\n{'─' * 25}\n\n{formatted}"
+                    display = f"{header}\n\n{formatted}"
                     if len(display) > MAX_MSG_LEN:
                         display = display[:MAX_MSG_LEN]
                     live_msg_id = send_message(display)
@@ -785,7 +828,8 @@ def main():
                 edit_message(live_msg_id, final)
                 live_msg_id = None
                 live_msg_text = ""
-            live_msg_id = send_message(approval_block)
+            # Approvals always push-notify the user's phone
+            live_msg_id = send_message(approval_block, notify=True)
             if live_msg_id:
                 live_msg_text = approval_block
             prev_had_approval = True
@@ -823,7 +867,14 @@ def main():
         if not formatted:
             continue
 
-        display = f"{header}\n{'─' * 25}\n\n{formatted}"
+        # Detect if this update warrants a phone notification
+        should_notify, notify_summary = detect_notification(visible)
+
+        # Prepend short summary for phone notification preview
+        if should_notify and notify_summary:
+            display = f"{notify_summary}\n\n{header}\n\n{formatted}"
+        else:
+            display = f"{header}\n\n{formatted}"
         while len(display) > MAX_MSG_LEN:
             lines = display.split("\n")
             if len(lines) > 5:
@@ -834,14 +885,21 @@ def main():
 
         if live_msg_id:
             if display != live_msg_text:
-                if edit_message(live_msg_id, display):
+                if should_notify:
+                    # Important update: send as new message with notification
+                    final = live_msg_text.replace(header, header_done)
+                    edit_message(live_msg_id, final)
+                    live_msg_id = send_message(display, notify=True)
+                    if live_msg_id:
+                        live_msg_text = display
+                elif edit_message(live_msg_id, display):
                     live_msg_text = display
                 else:
                     live_msg_id = send_message(display)
                     if live_msg_id:
                         live_msg_text = display
         else:
-            live_msg_id = send_message(display)
+            live_msg_id = send_message(display, notify=should_notify)
             if live_msg_id:
                 live_msg_text = display
 
