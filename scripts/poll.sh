@@ -300,17 +300,6 @@ Press ❌ 3. No to cancel" \
               > /dev/null 2>&1
           fi
         fi
-      else
-        # Check for dangerous commands before typing
-        if is_dangerous "$MSG"; then
-          log "BLOCKED dangerous command: $MSG"
-          tg_curl "sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=🚫 Blocked: potentially dangerous command detected" \
-            > /dev/null 2>&1
-        else
-          "$SCRIPT_DIR/type-to-terminal.sh" "$MSG" 2>/dev/null || true
-        fi
 
       elif [[ "$MSG" == __FILE__* ]]; then
         FILE_META="${MSG#__FILE__}"
@@ -364,6 +353,17 @@ Press ❌ 3. No to cancel" \
             -d text="❌ Failed to download image" > /dev/null 2>&1
         fi
 
+      else
+        # Regular text message — check for dangerous commands before typing
+        if is_dangerous "$MSG"; then
+          log "BLOCKED dangerous command: $MSG"
+          tg_curl "sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=🚫 Blocked: potentially dangerous command detected" \
+            > /dev/null 2>&1
+        else
+          "$SCRIPT_DIR/type-to-terminal.sh" "$MSG" 2>/dev/null || true
+        fi
       fi
       sleep 1
     done
