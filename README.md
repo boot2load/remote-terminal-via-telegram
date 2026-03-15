@@ -146,6 +146,29 @@ All settings are stored in `config.json` (created by `setup.sh`):
 
 No reconfiguration needed — if `window_match_string` is empty, the bot automatically follows whichever Claude Code terminal is active. Just `cd` to a different project and the bot keeps working.
 
+## Security: macOS Keychain (Optional)
+
+During setup, you can choose to store sensitive credentials (bot token, OpenAI API key) in macOS Keychain instead of `config.json`.
+
+**With Keychain enabled:**
+- Bot token and API keys are stored in your login Keychain
+- `config.json` contains `"STORED_IN_KEYCHAIN"` placeholder instead of actual secrets
+- Credentials are retrieved at runtime via the `security` command
+- Even if `config.json` is leaked, no secrets are exposed
+
+**Without Keychain:**
+- Everything stored in `config.json` with `chmod 600` (owner-only read)
+- Simpler but less secure
+
+To switch an existing setup to Keychain:
+```bash
+# Store token in Keychain manually
+security add-generic-password -U -s "remote-terminal-telegram" -a "bot_token" -w "YOUR_TOKEN"
+
+# Edit config.json: set security.use_keychain to true
+# and bot_token to "STORED_IN_KEYCHAIN"
+```
+
 ## Architecture
 
 ```

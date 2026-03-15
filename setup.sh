@@ -117,6 +117,26 @@ case "$VOICE_CHOICE" in
 esac
 echo ""
 
+# --- Security: Keychain ---
+echo "Step 5: Credential Storage"
+echo "  1) macOS Keychain (recommended — secrets stored securely, not in files)"
+echo "  2) Config file only (secrets in config.json with 600 permissions)"
+read -rp "  Choose (1/2): " KEYCHAIN_CHOICE
+
+USE_KEYCHAIN=false
+if [ "$KEYCHAIN_CHOICE" = "1" ]; then
+  USE_KEYCHAIN=true
+  echo "  Storing bot token in macOS Keychain..."
+  security add-generic-password -U -s "remote-terminal-telegram" -a "bot_token" -w "$BOT_TOKEN" 2>/dev/null
+  echo "  ✅ Bot token stored in Keychain"
+
+  if [ -n "$OPENAI_KEY" ]; then
+    security add-generic-password -U -s "remote-terminal-telegram" -a "openai_api_key" -w "$OPENAI_KEY" 2>/dev/null
+    echo "  ✅ OpenAI API key stored in Keychain"
+  fi
+fi
+echo ""
+
 # --- Write config (values passed via env vars to prevent injection) ---
 echo "Writing config.json..."
 export _CFG_BOT_TOKEN="$BOT_TOKEN"
@@ -127,13 +147,16 @@ export _CFG_WINDOW_MATCH="$WINDOW_MATCH"
 export _CFG_VOICE_BACKEND="$VOICE_BACKEND"
 export _CFG_MLX_MODEL="$MLX_MODEL"
 export _CFG_OPENAI_KEY="$OPENAI_KEY"
+export _CFG_USE_KEYCHAIN="$USE_KEYCHAIN"
 export _CFG_OUTPUT="$RTVT_DIR/config.json"
 
 python3 -c '
 import json, os
+
+use_keychain = os.environ.get("_CFG_USE_KEYCHAIN") == "true"
+
 config = {
     "telegram": {
-        "bot_token": os.environ["_CFG_BOT_TOKEN"],
         "chat_id": os.environ["_CFG_CHAT_ID"],
         "allowed_user_id": os.environ["_CFG_CHAT_ID"]
     },
@@ -145,9 +168,20 @@ config = {
     "voice": {
         "backend": os.environ["_CFG_VOICE_BACKEND"],
         "mlx_model": os.environ["_CFG_MLX_MODEL"],
-        "openai_api_key": os.environ.get("_CFG_OPENAI_KEY", "")
+    },
+    "security": {
+        "use_keychain": use_keychain
     }
 }
+
+# Only store secrets in config if NOT using keychain
+if not use_keychain:
+    config["telegram"]["bot_token"] = os.environ["_CFG_BOT_TOKEN"]
+    config["voice"]["openai_api_key"] = os.environ.get("_CFG_OPENAI_KEY", "")
+else:
+    config["telegram"]["bot_token"] = "STORED_IN_KEYCHAIN"
+    config["voice"]["openai_api_key"] = "STORED_IN_KEYCHAIN"
+
 with open(os.environ["_CFG_OUTPUT"], "w") as f:
     json.dump(config, f, indent=2)
 print("✅ config.json written")
@@ -156,7 +190,8 @@ chmod 600 "$RTVT_DIR/config.json"
 
 # Clean up env vars
 unset _CFG_BOT_TOKEN _CFG_CHAT_ID _CFG_PROJECT_NAME _CFG_PROJECT_DIR
-unset _CFG_WINDOW_MATCH _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY _CFG_OUTPUT
+unset _CFG_WINDOW_MATCH _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY
+unset _CFG_USE_KEYCHAIN _CFG_OUTPUT
 
 # --- Python venv ---
 if [ "$VOICE_BACKEND" = "mlx-whisper" ]; then

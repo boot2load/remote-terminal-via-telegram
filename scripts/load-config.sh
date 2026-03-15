@@ -1,7 +1,7 @@
 #!/bin/bash
 # Loads config.json and exports variables for all scripts
+# Supports optional macOS Keychain for sensitive values (bot_token, openai_api_key)
 # Usage: source "$SCRIPT_DIR/load-config.sh"
-# Security: uses shlex.quote() to prevent shell injection from config values
 
 RTVT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_FILE="$RTVT_DIR/config.json"
@@ -11,20 +11,47 @@ if [ ! -f "$CONFIG_FILE" ]; then
   exit 1
 fi
 
-# Write safe exports to a temp file — never use eval with raw config values
 _RTVT_CONFIG_TMP=$(mktemp)
 trap 'rm -f "$_RTVT_CONFIG_TMP"' RETURN
 
 export _RTVT_CONFIG_FILE="$CONFIG_FILE"
 python3 -c '
-import json, shlex, os, sys
+import json, shlex, os, subprocess, sys
 
 config_file = os.environ["_RTVT_CONFIG_FILE"]
 with open(config_file) as f:
     c = json.load(f)
 
+use_keychain = c.get("security", {}).get("use_keychain", False)
+
+def get_from_keychain(service, account):
+    """Retrieve a secret from macOS Keychain."""
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+# Get bot token: keychain first, then config fallback
+bot_token = ""
+openai_key = ""
+
+if use_keychain:
+    bot_token = get_from_keychain("remote-terminal-telegram", "bot_token") or ""
+    openai_key = get_from_keychain("remote-terminal-telegram", "openai_api_key") or ""
+
+if not bot_token:
+    bot_token = c["telegram"].get("bot_token", "")
+if not openai_key:
+    openai_key = c["voice"].get("openai_api_key", "")
+
 exports = {
-    "TELEGRAM_BOT_TOKEN": c["telegram"]["bot_token"],
+    "TELEGRAM_BOT_TOKEN": bot_token,
     "TELEGRAM_CHAT_ID": str(c["telegram"]["chat_id"]),
     "ALLOWED_USER_ID": str(c["telegram"].get("allowed_user_id", c["telegram"]["chat_id"])),
     "PROJECT_NAME": c.get("project", {}).get("name", "Terminal"),
@@ -32,7 +59,7 @@ exports = {
     "WINDOW_MATCH": c.get("project", {}).get("window_match_string", ""),
     "VOICE_BACKEND": c["voice"]["backend"],
     "MLX_MODEL": c["voice"]["mlx_model"],
-    "OPENAI_API_KEY": c["voice"].get("openai_api_key", ""),
+    "OPENAI_API_KEY": openai_key,
 }
 for key, val in exports.items():
     print(f"export {key}={shlex.quote(val)}")
