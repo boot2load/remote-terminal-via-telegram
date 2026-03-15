@@ -18,7 +18,8 @@ echo ""
 
 # --- Prerequisites ---
 echo "Checking prerequisites..."
-command -v python3 >/dev/null || { echo "❌ python3 not found. Install Python 3."; exit 1; }
+command -v python3 >/dev/null || { echo "❌ python3 not found. Install Python 3.6+."; exit 1; }
+python3 -c "import sys; assert sys.version_info >= (3,6), 'Python 3.6+ required'" 2>/dev/null || { echo "❌ Python 3.6+ required."; exit 1; }
 command -v curl >/dev/null || { echo "❌ curl not found."; exit 1; }
 
 if [ "$OS_TYPE" = "Darwin" ]; then
@@ -207,8 +208,8 @@ use_keychain = os.environ.get("_CFG_USE_KEYCHAIN") == "true"
 
 config = {
     "telegram": {
-        "chat_id": os.environ["_CFG_CHAT_ID"],
-        "allowed_user_id": os.environ.get("_CFG_USER_ID", os.environ["_CFG_CHAT_ID"])
+        "chat_id": int(os.environ["_CFG_CHAT_ID"]),
+        "allowed_user_id": int(os.environ.get("_CFG_USER_ID", os.environ["_CFG_CHAT_ID"]))
     },
     "project": {
         "name": os.environ["_CFG_PROJECT_NAME"],
@@ -240,7 +241,7 @@ print("✅ config.json written")
 chmod 600 "$RTVT_DIR/config.json"
 
 # Clean up env vars
-unset _CFG_BOT_TOKEN _CFG_CHAT_ID _CFG_PROJECT_NAME _CFG_PROJECT_DIR
+unset _CFG_BOT_TOKEN _CFG_CHAT_ID _CFG_USER_ID _CFG_PROJECT_NAME _CFG_PROJECT_DIR
 unset _CFG_WINDOW_MATCH _CFG_TMUX_SESSION _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY
 unset _CFG_USE_KEYCHAIN _CFG_OUTPUT
 

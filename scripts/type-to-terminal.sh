@@ -87,25 +87,32 @@ elif [ "$OS_TYPE" = "Linux" ]; then
       return
     fi
 
-    # Search all panes for Claude Code
-    tmux list-panes -a -F '#{pane_id} #{pane_current_command} #{pane_title}' 2>/dev/null | while IFS= read -r line; do
-      PANE_ID=$(echo "$line" | awk '{print $1}')
+    # Search all panes for Claude Code (using process substitution to avoid subshell)
+    local PANE_LIST
+    PANE_LIST=$(tmux list-panes -a -F '#{pane_id} #{pane_current_command} #{pane_title}' 2>/dev/null || echo "")
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      local P_ID REST
+      P_ID=$(echo "$line" | awk '{print $1}')
       REST=$(echo "$line" | cut -d' ' -f2-)
       if echo "$REST" | grep -qi "claude"; then
-        echo "$PANE_ID"
+        echo "$P_ID"
         return
       fi
-    done
+    done <<< "$PANE_LIST"
 
-    # Fallback: check pane content
-    tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r pane; do
+    # Fallback: check pane content for Claude Code markers
+    local ALL_PANES
+    ALL_PANES=$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null || echo "")
+    while IFS= read -r pane; do
       [ -z "$pane" ] && continue
+      local CONTENT
       CONTENT=$(tmux capture-pane -t "$pane" -p -S -20 2>/dev/null || echo "")
-      if echo "$CONTENT" | grep -q "Claude Code\|⏺"; then
+      if echo "$CONTENT" | grep -qE "Claude Code|⏺"; then
         echo "$pane"
         return
       fi
-    done
+    done <<< "$ALL_PANES"
   }
 
   PANE=$(find_claude_pane)
@@ -114,7 +121,9 @@ elif [ "$OS_TYPE" = "Linux" ]; then
     exit 1
   fi
 
-  tmux send-keys -t "$PANE" "$MESSAGE" Enter
+  # Use -l (literal) to prevent tmux from interpreting key names, then send Enter separately
+  tmux send-keys -l -t "$PANE" "$MESSAGE"
+  tmux send-keys -t "$PANE" Enter
 else
   echo "ERROR: Unsupported OS: $OS_TYPE" >&2
   exit 1

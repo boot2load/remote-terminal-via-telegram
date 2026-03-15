@@ -12,6 +12,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 _RTVT_CONFIG_TMP=$(mktemp)
+chmod 600 "$_RTVT_CONFIG_TMP"
 trap 'rm -f "$_RTVT_CONFIG_TMP"' RETURN
 
 export _RTVT_CONFIG_FILE="$CONFIG_FILE"

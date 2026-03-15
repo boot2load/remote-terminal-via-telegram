@@ -9,7 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/load-config.sh"
 
 FILE_ID="${1:?Usage: download-file.sh <file_id> <filename>}"
-FILENAME="${2:-attachment}"
+# Sanitize filename: strip path components and dangerous characters
+FILENAME=$(basename "${2:-attachment}" | tr -cd 'A-Za-z0-9._-')
+[ -z "$FILENAME" ] && FILENAME="attachment"
 
 # Validate file_id
 if ! echo "$FILE_ID" | grep -qE '^[A-Za-z0-9_-]+$'; then

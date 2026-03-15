@@ -30,7 +30,11 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   mkdir "$LOCK_DIR" 2>/dev/null || exit 1
 fi
 echo $$ > "$PID_FILE"
-trap '[ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK_DIR" "$PID_FILE"' EXIT
+cleanup_poll() {
+  [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK_DIR" "$PID_FILE"
+  rm -f "$_TG_URL_FILE" 2>/dev/null || true
+}
+trap cleanup_poll EXIT
 
 # Dangerous command patterns — block these from being typed into terminal
 DANGEROUS_PATTERNS='rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|-rf|--recursive|--force)|rm\s+-r\s|mkfs|dd\s+if=|:\(\)\{|\.\(\)\{|chmod\s+[ugo+]*s|chmod\s+-R\s+777|curl.*\|.*(sh|bash|python|perl|ruby)|wget.*\|.*(sh|bash|python|perl|ruby)|(bash|sh|zsh)\s+<\(|\|\s*(sh|bash|zsh)\b|base64.*\|\s*(sh|bash)|sudo\s|> /dev/sd|shutdown|reboot|init\s+0|halt|/dev/tcp/|nc\s+(-[a-zA-Z]*e|--exec)|find.*-delete|find.*-exec.*rm|shred\s|osascript.*do\s+shell\s+script|defaults\s+write.*LoginHook|>\s*/etc/|python3?\s+-c\s+.*os\.(system|exec|popen)|diskutil\s+(erase|unmount|partition)|launchctl\s+(load|submit)|crontab\s'
@@ -129,30 +133,34 @@ ASEOF
     fi
   elif [ "$OS_TYPE" = "Linux" ]; then
     # Linux: tmux send Escape key
-    PANE=$("$SCRIPT_DIR/type-to-terminal.sh" "__FIND_PANE__" 2>/dev/null && echo "" || echo "")
-    # Direct tmux escape — find pane and send Escape
     TMUX_SESSION="${TMUX_SESSION:-}"
+    local ESC_PANE=""
     if [ -n "$TMUX_SESSION" ]; then
-      tmux send-keys -t "$TMUX_SESSION" Escape 2>/dev/null || true
+      ESC_PANE=$(tmux list-panes -t "$TMUX_SESSION" -F '#{pane_id}' 2>/dev/null | head -1)
     else
-      # Find Claude pane and send Escape
-      PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_current_command} #{pane_title}' 2>/dev/null | grep -i claude | head -1 | awk '{print $1}')
-      if [ -z "$PANE" ]; then
-        # Fallback: check content
-        PANE=$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while read -r p; do
+      # Find Claude pane
+      ESC_PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_current_command} #{pane_title}' 2>/dev/null | grep -i claude | head -1 | awk '{print $1}')
+      if [ -z "$ESC_PANE" ]; then
+        # Fallback: check pane content
+        local ALL_P
+        ALL_P=$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null || echo "")
+        while IFS= read -r p; do
           [ -z "$p" ] && continue
-          tmux capture-pane -t "$p" -p -S -5 2>/dev/null | grep -q "Claude Code\|⏺" && echo "$p" && break
-        done)
+          if tmux capture-pane -t "$p" -p -S -5 2>/dev/null | grep -qE "Claude Code|⏺"; then
+            ESC_PANE="$p"
+            break
+          fi
+        done <<< "$ALL_P"
       fi
-      [ -n "$PANE" ] && tmux send-keys -t "$PANE" Escape 2>/dev/null || true
     fi
+    [ -n "$ESC_PANE" ] && tmux send-keys -t "$ESC_PANE" Escape 2>/dev/null || true
   fi
 }
 
 # Use a netrc-style file to hide token from ps aux
 _TG_URL_FILE=$(mktemp)
 chmod 600 "$_TG_URL_FILE"
-trap 'rm -rf "$LOCK_DIR" "$PID_FILE" "$_TG_URL_FILE"' EXIT
+# $_TG_URL_FILE cleanup handled by cleanup_poll trap
 
 tg_curl() {
   # Wrapper that hides bot token from process list
@@ -346,8 +354,11 @@ Press ❌ 3. No to cancel" \
       elif [[ "$MSG" == __FILE__* ]]; then
         FILE_META="${MSG#__FILE__}"
         FILE_ID=$(echo "$FILE_META" | cut -d'|' -f1)
-        FILE_NAME=$(echo "$FILE_META" | cut -d'|' -f2)
-        CAPTION=$(echo "$FILE_META" | cut -d'|' -f3)
+        # Sanitize filename: strip path components and dangerous characters
+        FILE_NAME=$(echo "$FILE_META" | cut -d'|' -f2 | tr -cd 'A-Za-z0-9._- ')
+        [ -z "$FILE_NAME" ] && FILE_NAME="document"
+        # Sanitize and truncate caption
+        CAPTION=$(echo "$FILE_META" | cut -d'|' -f3 | tr -cd 'A-Za-z0-9 .,;:!?()_-' | cut -c1-200)
 
         tg_curl "sendMessage" \
           -d chat_id="${TELEGRAM_CHAT_ID}" \
@@ -372,7 +383,8 @@ Press ❌ 3. No to cancel" \
       elif [[ "$MSG" == __PHOTO__* ]]; then
         PHOTO_META="${MSG#__PHOTO__}"
         PHOTO_ID=$(echo "$PHOTO_META" | cut -d'|' -f1)
-        CAPTION=$(echo "$PHOTO_META" | cut -d'|' -f2)
+        # Sanitize and truncate caption
+        CAPTION=$(echo "$PHOTO_META" | cut -d'|' -f2 | tr -cd 'A-Za-z0-9 .,;:!?()_-' | cut -c1-200)
         PHOTO_NAME="screenshot_$(date +%Y%m%d_%H%M%S).jpg"
 
         tg_curl "sendMessage" \
