@@ -46,26 +46,32 @@ echo "$OFFSET" > "$RTVT_DIR/.last_update_id"
 nohup "$RTVT_DIR/scripts/poll.sh" >> "$LOG_FILE" 2>&1 &
 nohup python3 "$RTVT_DIR/scripts/terminal-watcher.py" >> "$LOG_FILE" 2>&1 &
 
-# Send activation message with keyboard (hide token)
-# Escape Markdown special chars in PROJECT_NAME to prevent parse failures
-SAFE_NAME=$(printf '%s' "$PROJECT_NAME" | sed 's/[_*\[`]/\\&/g')
+# Send activation message with keyboard (hide token, safe JSON via python3)
 echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\"" > "$_URL_FILE"
+_MSG_JSON=$(python3 -c "
+import json, os
+name = os.environ.get('PROJECT_NAME', 'Terminal')
+# Escape Markdown special characters
+for ch in ['_', '*', '[', '\`']:
+    name = name.replace(ch, '\\\\' + ch)
+print(json.dumps({
+    'chat_id': os.environ['TELEGRAM_CHAT_ID'],
+    'text': f'🟢 *Remote Terminal Activated*\n{name} session is now being monitored.\nUse the buttons below or type a message to send to the terminal.',
+    'parse_mode': 'Markdown',
+    'reply_markup': {
+        'keyboard': [
+            [{'text': '✅ 1. Yes'}, {'text': '✅ 2. Always'}, {'text': '❌ 3. No'}],
+            [{'text': '🛑 Esc (cancel)'}, {'text': '📋 Status'}, {'text': '🔄 Continue'}],
+            [{'text': '↩️ Undo last change'}, {'text': '⏹ /terminal-control-end'}]
+        ],
+        'resize_keyboard': True,
+        'is_persistent': True
+    }
+}))
+")
 curl -s -K "$_URL_FILE" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-    \"text\": \"🟢 *Remote Terminal Activated*\n${SAFE_NAME} session is now being monitored.\nUse the buttons below or type a message to send to the terminal.\",
-    \"parse_mode\": \"Markdown\",
-    \"reply_markup\": {
-      \"keyboard\": [
-        [{\"text\": \"✅ 1. Yes\"}, {\"text\": \"✅ 2. Always\"}, {\"text\": \"❌ 3. No\"}],
-        [{\"text\": \"🛑 Esc (cancel)\"}, {\"text\": \"📋 Status\"}, {\"text\": \"🔄 Continue\"}],
-        [{\"text\": \"↩️ Undo last change\"}, {\"text\": \"⏹ /terminal-control-end\"}]
-      ],
-      \"resize_keyboard\": true,
-      \"is_persistent\": true
-    }
-  }" > /dev/null
+  -d "$_MSG_JSON" > /dev/null
 
 rm -f "$_URL_FILE"
 

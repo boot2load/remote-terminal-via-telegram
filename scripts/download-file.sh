@@ -13,6 +13,15 @@ FILE_ID="${1:?Usage: download-file.sh <file_id> <filename>}"
 FILENAME=$(basename "${2:-attachment}" | tr -cd 'A-Za-z0-9._-')
 [ -z "$FILENAME" ] && FILENAME="attachment"
 
+# Add unique suffix to prevent file overwrites
+BASENAME="${FILENAME%.*}"
+EXTENSION="${FILENAME##*.}"
+if [ "$BASENAME" = "$EXTENSION" ]; then
+  FILENAME="${BASENAME}_$(date +%s)_$$"
+else
+  FILENAME="${BASENAME}_$(date +%s)_$$.${EXTENSION}"
+fi
+
 # Validate file_id
 if ! echo "$FILE_ID" | grep -qE '^[A-Za-z0-9_-]+$'; then
   echo "ERROR: Invalid file_id" >&2

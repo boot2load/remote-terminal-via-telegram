@@ -13,6 +13,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
   exit 1
 fi
 
+# Enforce restrictive permissions on config (contains secrets)
+chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+
 _RTVT_CONFIG_TMP=$(mktemp)
 chmod 600 "$_RTVT_CONFIG_TMP"
 # Clean up temp file after sourcing (RETURN works when script is sourced)

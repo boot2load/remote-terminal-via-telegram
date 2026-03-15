@@ -68,7 +68,7 @@ if not BOT_TOKEN or BOT_TOKEN in ("STORED_IN_KEYCHAIN", "STORED_IN_SECRET_TOOL")
     print(f"ERROR: Bot token not found in {store} or config.json", file=sys.stderr)
     sys.exit(1)
 
-CHAT_ID = config["telegram"]["chat_id"]
+CHAT_ID = str(config["telegram"]["chat_id"])
 PROJECT_NAME = config.get("project", {}).get("name", "Terminal")
 WINDOW_MATCH = config.get("project", {}).get("window_match_string", "")
 TMUX_SESSION = config.get("project", {}).get("tmux_session", "")
@@ -76,6 +76,7 @@ MAX_MSG_LEN = 3900
 
 with open(PID_FILE, "w") as f:
     f.write(str(os.getpid()))
+os.chmod(PID_FILE, 0o600)
 
 # ── macOS: AppleScript for Terminal.app ──
 APPLESCRIPT_WITH_MATCH = '''

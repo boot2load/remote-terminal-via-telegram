@@ -44,6 +44,7 @@ else
 fi
 
 echo $$ > "$PID_FILE"
+chmod 600 "$PID_FILE" 2>/dev/null || true
 cleanup_poll() {
   [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK_DIR" "$PID_FILE" "$LOCK_FILE"
   rm -f "$_TG_URL_FILE" 2>/dev/null || true
@@ -86,11 +87,12 @@ file_mtime() {
 }
 
 log() {
-  # Log with size-based rotation (max 10MB)
+  # Log with size-based rotation (max 10MB), restrictive permissions
   local LOG_MAX=10485760
   if [ -f "$LOG_FILE" ] && [ "$(file_size "$LOG_FILE")" -gt "$LOG_MAX" ]; then
     tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
   fi
+  touch "$LOG_FILE" && chmod 600 "$LOG_FILE" 2>/dev/null || true
   echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
 }
 
@@ -323,7 +325,7 @@ for m in messages:
           VOICE_TEXT=$(cat "$RTVT_DIR/.pending_voice.txt")
           rm -f "$RTVT_DIR/.pending_voice.txt"
           if is_dangerous "$VOICE_TEXT"; then
-            log "BLOCKED dangerous voice command: $VOICE_TEXT"
+            log "BLOCKED dangerous voice command (${#VOICE_TEXT} chars)"
             tg_curl "sendMessage" \
               -d chat_id="${TELEGRAM_CHAT_ID}" \
               --data-urlencode "text=🚫 Blocked: dangerous command in voice transcription" \
@@ -362,8 +364,11 @@ for m in messages:
           rm -f "$_VOICE_TMP"
 
           if [ -n "$TRANSCRIBED" ]; then
-            echo "$TRANSCRIBED" > "$RTVT_DIR/.pending_voice.txt"
-            chmod 600 "$RTVT_DIR/.pending_voice.txt"
+            # Write to temp file first, then move (prevents symlink attacks)
+            _VOICE_PENDING=$(mktemp "$RTVT_DIR/.pending_voice_XXXXXX")
+            chmod 600 "$_VOICE_PENDING"
+            echo "$TRANSCRIBED" > "$_VOICE_PENDING"
+            mv -f "$_VOICE_PENDING" "$RTVT_DIR/.pending_voice.txt"
             tg_curl "sendMessage" \
               --data-urlencode "text=🎙 Voice transcription:
 
@@ -440,7 +445,7 @@ Press ❌ 3. No to cancel" \
       else
         # Regular text message — check for dangerous commands before typing
         if is_dangerous "$MSG"; then
-          log "BLOCKED dangerous command: $MSG"
+          log "BLOCKED dangerous command (${#MSG} chars)"
           tg_curl "sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=🚫 Blocked: potentially dangerous command detected" \

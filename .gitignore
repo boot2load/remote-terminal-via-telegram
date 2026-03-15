@@ -3,11 +3,12 @@ config.json
 .venv/
 .active
 .poll.pid
+.poll.flock
 .poll.lock/
 .watcher.pid
 .last_update_id
 .pending_voice.txt
-.voice_result.txt
+.voice_result*
 .tmp_voice_*/
 terminal.log
 daemon.log
@@ -16,3 +17,4 @@ nohup.out
 inbox/
 attachments/
 __pycache__/
+.claude/

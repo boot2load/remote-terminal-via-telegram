@@ -8,27 +8,32 @@ source "$SCRIPT_DIR/load-config.sh"
 
 LOG_FILE="$RTVT_DIR/daemon.log"
 
-# Send shutdown message (hide token)
-# Escape Markdown special chars in PROJECT_NAME to prevent parse failures
-SAFE_NAME=$(printf '%s' "$PROJECT_NAME" | sed 's/[_*\[`]/\\&/g')
+# Send shutdown message (hide token, safe JSON via python3)
 _URL_FILE=$(mktemp)
 chmod 600 "$_URL_FILE"
 echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\"" > "$_URL_FILE"
+_MSG_JSON=$(python3 -c "
+import json, os
+name = os.environ.get('PROJECT_NAME', 'Terminal')
+for ch in ['_', '*', '[', '\`']:
+    name = name.replace(ch, '\\\\' + ch)
+print(json.dumps({
+    'chat_id': os.environ['TELEGRAM_CHAT_ID'],
+    'text': f'🔴 *Remote Terminal Deactivated*\n{name} session monitoring stopped.\nRun /terminal-control-start to reconnect.',
+    'parse_mode': 'Markdown',
+    'reply_markup': {
+        'keyboard': [
+            [{'text': '⬜ Not connected to terminal'}],
+            [{'text': '▶️ /terminal-control-start'}]
+        ],
+        'resize_keyboard': True,
+        'is_persistent': True
+    }
+}))
+")
 curl -s -K "$_URL_FILE" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-    \"text\": \"🔴 *Remote Terminal Deactivated*\n${SAFE_NAME} session monitoring stopped.\nRun /terminal-control-start to reconnect.\",
-    \"parse_mode\": \"Markdown\",
-    \"reply_markup\": {
-      \"keyboard\": [
-        [{\"text\": \"⬜ Not connected to terminal\"}],
-        [{\"text\": \"▶️ /terminal-control-start\"}]
-      ],
-      \"resize_keyboard\": true,
-      \"is_persistent\": true
-    }
-  }" > /dev/null
+  -d "$_MSG_JSON" > /dev/null
 rm -f "$_URL_FILE"
 
 # Deactivate
