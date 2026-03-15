@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Send a message to Telegram
 # Security: uses --data-urlencode for proper encoding, hides token from ps
 # Usage: send.sh "Your message here"

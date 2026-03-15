@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Polls Telegram for incoming messages and types them into the Claude Code terminal
 # Security: sender authentication, command blocklist, rate limiting, input validation
 # Runs as a background daemon while Remote Terminal is active
@@ -15,32 +15,54 @@ LOG_FILE="$RTVT_DIR/daemon.log"
 MAX_MSG_PER_CYCLE=5
 MAX_MSG_LENGTH=500
 
-# Ensure only one instance — use lock directory (atomic on all filesystems)
+# Ensure only one instance
 LOCK_DIR="$RTVT_DIR/.poll.lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  # Check if the lock holder is still alive
-  if [ -f "$PID_FILE" ]; then
-    OLD_PID=$(cat "$PID_FILE")
-    if kill -0 "$OLD_PID" 2>/dev/null; then
-      echo "Poller already running (PID $OLD_PID), exiting" >> "$LOG_FILE"
-      exit 0
-    fi
+LOCK_FILE="$RTVT_DIR/.poll.flock"
+OS_LOCK="$(uname -s)"
+
+if [ "$OS_LOCK" = "Linux" ] && command -v flock >/dev/null 2>&1; then
+  # Linux: use flock for atomic locking (no TOCTOU race)
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    echo "Poller already running, exiting" >> "$LOG_FILE"
+    exit 0
   fi
-  rm -rf "$LOCK_DIR"
-  mkdir "$LOCK_DIR" 2>/dev/null || exit 1
+  # Lock acquired — fd 9 stays open until process exits
+else
+  # macOS / fallback: lock directory (atomic mkdir)
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    if [ -f "$PID_FILE" ]; then
+      OLD_PID=$(cat "$PID_FILE")
+      if kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "Poller already running (PID $OLD_PID), exiting" >> "$LOG_FILE"
+        exit 0
+      fi
+    fi
+    rm -rf "$LOCK_DIR"
+    mkdir "$LOCK_DIR" 2>/dev/null || exit 1
+  fi
 fi
+
 echo $$ > "$PID_FILE"
 cleanup_poll() {
-  [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK_DIR" "$PID_FILE"
+  [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK_DIR" "$PID_FILE" "$LOCK_FILE"
   rm -f "$_TG_URL_FILE" 2>/dev/null || true
 }
 trap cleanup_poll EXIT
 
 # Dangerous command patterns — block these from being typed into terminal
+# Defense-in-depth: this blocklist catches obvious destructive commands.
+# It cannot prevent all evasion (encoding, aliasing, etc.) — Claude Code's
+# own approval system is the primary safety layer.
 DANGEROUS_PATTERNS='rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|-rf|--recursive|--force)|rm\s+-r\s|mkfs|dd\s+if=|:\(\)\{|\.\(\)\{|chmod\s+[ugo+]*s|chmod\s+-R\s+777|curl.*\|.*(sh|bash|python|perl|ruby)|wget.*\|.*(sh|bash|python|perl|ruby)|(bash|sh|zsh)\s+<\(|\|\s*(sh|bash|zsh)\b|base64.*\|\s*(sh|bash)|sudo\s|> /dev/sd|shutdown|reboot|init\s+0|halt|/dev/tcp/|nc\s+(-[a-zA-Z]*e|--exec)|find.*-delete|find.*-exec.*rm|shred\s|osascript.*do\s+shell\s+script|defaults\s+write.*LoginHook|>\s*/etc/|python3?\s+-c\s+.*os\.(system|exec|popen)|diskutil\s+(erase|unmount|partition)|launchctl\s+(load|submit)|crontab\s'
 
+# Evasion detection: catches common encoding/obfuscation tricks
+EVASION_PATTERNS='\\x[0-9a-fA-F]{2}|\\[0-7]{3}|\$\x27|eval\s|xargs.*rm|perl\s+-e|ruby\s+-e|printf.*\\\\|echo.*\\\\x'
+
 is_dangerous() {
-  echo "$1" | grep -qiE "$DANGEROUS_PATTERNS"
+  echo "$1" | grep -qiE "$DANGEROUS_PATTERNS" && return 0
+  echo "$1" | grep -qiE "$EVASION_PATTERNS" && return 0
+  return 1
 }
 
 OS_TYPE="$(uname -s)"

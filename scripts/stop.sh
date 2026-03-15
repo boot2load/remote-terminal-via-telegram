@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Stop Remote Terminal — deactivates Telegram sync
 # Security: PID-based cleanup, token hidden from ps
 set -euo pipefail

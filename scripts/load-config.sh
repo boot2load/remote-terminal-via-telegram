@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Loads config.json and exports variables for all scripts
-# Supports optional macOS Keychain for sensitive values (bot_token, openai_api_key)
+# Supports optional macOS Keychain and Linux secret-tool for sensitive values
+# Secrets are written to a chmod-600 temp file sourced once, then deleted —
+# they are exported as env vars for the current process tree only.
 # Usage: source "$SCRIPT_DIR/load-config.sh"
 
 RTVT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,7 +15,8 @@ fi
 
 _RTVT_CONFIG_TMP=$(mktemp)
 chmod 600 "$_RTVT_CONFIG_TMP"
-trap 'rm -f "$_RTVT_CONFIG_TMP"' RETURN
+# Clean up temp file after sourcing (RETURN works when script is sourced)
+trap 'rm -f "$_RTVT_CONFIG_TMP"' RETURN 2>/dev/null || trap 'rm -f "$_RTVT_CONFIG_TMP"' EXIT
 
 export _RTVT_CONFIG_FILE="$CONFIG_FILE"
 python3 -c '
@@ -23,7 +26,8 @@ config_file = os.environ["_RTVT_CONFIG_FILE"]
 with open(config_file) as f:
     c = json.load(f)
 
-use_keychain = c.get("security", {}).get("use_keychain", False) and sys.platform == "darwin"
+use_keychain = c.get("security", {}).get("use_keychain", False)
+use_secret_tool = c.get("security", {}).get("use_secret_tool", False) and sys.platform == "linux"
 
 def get_from_keychain(service, account):
     """Retrieve a secret from macOS Keychain (macOS only)."""
@@ -40,27 +44,48 @@ def get_from_keychain(service, account):
         pass
     return None
 
-# Get bot token: keychain first, then config fallback
+def get_from_secret_tool(service, account):
+    """Retrieve a secret from GNOME Keyring / libsecret (Linux only)."""
+    if sys.platform != "linux":
+        return None
+    try:
+        result = subprocess.run(
+            ["secret-tool", "lookup", "service", service, "account", account],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+# Get bot token: keychain/secret-tool first, then config fallback
 bot_token = ""
 openai_key = ""
 
-if use_keychain:
+if use_keychain and sys.platform == "darwin":
     bot_token = get_from_keychain("remote-terminal-telegram", "bot_token") or ""
     openai_key = get_from_keychain("remote-terminal-telegram", "openai_api_key") or ""
+elif use_secret_tool:
+    bot_token = get_from_secret_tool("remote-terminal-telegram", "bot_token") or ""
+    openai_key = get_from_secret_tool("remote-terminal-telegram", "openai_api_key") or ""
 
-if not bot_token:
+if not bot_token or bot_token == "STORED_IN_KEYCHAIN" or bot_token == "STORED_IN_SECRET_TOOL":
     bot_token = c["telegram"].get("bot_token", "")
-if not openai_key:
+if not openai_key or openai_key in ("STORED_IN_KEYCHAIN", "STORED_IN_SECRET_TOOL"):
     openai_key = c["voice"].get("openai_api_key", "")
 
 # Fail clearly if token is still a placeholder
-if bot_token == "STORED_IN_KEYCHAIN":
-    print("echo \"ERROR: Bot token not found in Keychain. Run: security add-generic-password -U -s remote-terminal-telegram -a bot_token -w YOUR_TOKEN\" >&2; exit 1")
+if bot_token in ("STORED_IN_KEYCHAIN", "STORED_IN_SECRET_TOOL"):
+    if sys.platform == "darwin":
+        print("echo \"ERROR: Bot token not found in Keychain. Run: security add-generic-password -U -s remote-terminal-telegram -a bot_token -w YOUR_TOKEN\" >&2; exit 1")
+    else:
+        print("echo \"ERROR: Bot token not found in secret-tool. Run: secret-tool store --label=RTVT service remote-terminal-telegram account bot_token\" >&2; exit 1")
     sys.exit(1)
 if not bot_token:
     print("echo \"ERROR: Bot token is empty. Run setup.sh or check config.json\" >&2; exit 1")
     sys.exit(1)
-if openai_key == "STORED_IN_KEYCHAIN":
+if openai_key in ("STORED_IN_KEYCHAIN", "STORED_IN_SECRET_TOOL"):
     openai_key = ""  # Non-critical — just disable voice
 
 exports = {

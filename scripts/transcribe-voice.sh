@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Downloads a Telegram voice message and transcribes it
 # Supports mlx-whisper (local) and OpenAI Whisper API (cloud)
 # Security: validates file_id, uses env vars for API keys, temp in project dir

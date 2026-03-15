@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Downloads a file from Telegram and saves it locally
 # Security: validates file_id, hides token from ps
 # Usage: download-file.sh <file_id> <filename>

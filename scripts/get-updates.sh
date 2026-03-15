@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Fetch recent messages sent to the bot
 # Security: hides token from process list
 # Usage: get-updates.sh

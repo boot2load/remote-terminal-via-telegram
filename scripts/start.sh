@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Start Remote Terminal — activates two-way Telegram sync
 # Security: PID-based process cleanup, token hidden from ps, audit logging
 set -euo pipefail

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Check for new Telegram messages in the inbox
 # Silent when empty (white dot), purple when messages arrive
 # Security: uses printf instead of echo -e, strips control chars

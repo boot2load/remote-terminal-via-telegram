@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Types a message into any Claude Code Terminal window
 # macOS: AppleScript + Terminal.app | Linux: tmux send-keys
 # Usage: type-to-terminal.sh "message text"

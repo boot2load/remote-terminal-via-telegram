@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Remote Terminal via Telegram — Interactive Setup Wizard
 # Creates config.json and installs everything needed
 
@@ -163,6 +163,7 @@ echo ""
 
 # --- Security: Credential Storage ---
 USE_KEYCHAIN=false
+USE_SECRET_TOOL=false
 if [ "$OS_TYPE" = "Darwin" ]; then
   echo "Step 5: Credential Storage"
   echo "  1) macOS Keychain (recommended — secrets stored securely, not in files)"
@@ -182,7 +183,24 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   fi
 else
   echo "Step 5: Credential Storage"
-  echo "  Credentials will be stored in config.json (file permissions: 600)"
+  if command -v secret-tool >/dev/null 2>&1; then
+    echo "  1) GNOME Keyring / secret-tool (recommended — secrets stored securely)"
+    echo "  2) Config file only (secrets in config.json with 600 permissions)"
+    read -rp "  Choose (1/2): " LINUX_CRED_CHOICE
+    if [ "$LINUX_CRED_CHOICE" = "1" ]; then
+      USE_SECRET_TOOL=true
+      echo "  Storing bot token in GNOME Keyring..."
+      echo -n "$BOT_TOKEN" | secret-tool store --label="RTVT Bot Token" service remote-terminal-telegram account bot_token 2>/dev/null
+      echo "  ✅ Bot token stored in GNOME Keyring"
+      if [ -n "$OPENAI_KEY" ]; then
+        echo -n "$OPENAI_KEY" | secret-tool store --label="RTVT OpenAI Key" service remote-terminal-telegram account openai_api_key 2>/dev/null
+        echo "  ✅ OpenAI API key stored in GNOME Keyring"
+      fi
+    fi
+  else
+    echo "  Credentials will be stored in config.json (file permissions: 600)"
+    echo "  Tip: install libsecret-tools for secure credential storage"
+  fi
 fi
 echo ""
 
@@ -199,6 +217,7 @@ export _CFG_VOICE_BACKEND="$VOICE_BACKEND"
 export _CFG_MLX_MODEL="$MLX_MODEL"
 export _CFG_OPENAI_KEY="$OPENAI_KEY"
 export _CFG_USE_KEYCHAIN="$USE_KEYCHAIN"
+export _CFG_USE_SECRET_TOOL="${USE_SECRET_TOOL:-false}"
 export _CFG_OUTPUT="$RTVT_DIR/config.json"
 
 python3 -c '
@@ -222,17 +241,22 @@ config = {
         "mlx_model": os.environ["_CFG_MLX_MODEL"],
     },
     "security": {
-        "use_keychain": use_keychain
+        "use_keychain": use_keychain,
+        "use_secret_tool": os.environ.get("_CFG_USE_SECRET_TOOL") == "true"
     }
 }
 
-# Only store secrets in config if NOT using keychain
-if not use_keychain:
+# Only store secrets in config if NOT using a secure store
+use_secret_tool = config["security"].get("use_secret_tool", False)
+if not use_keychain and not use_secret_tool:
     config["telegram"]["bot_token"] = os.environ["_CFG_BOT_TOKEN"]
     config["voice"]["openai_api_key"] = os.environ.get("_CFG_OPENAI_KEY", "")
-else:
+elif use_keychain:
     config["telegram"]["bot_token"] = "STORED_IN_KEYCHAIN"
     config["voice"]["openai_api_key"] = "STORED_IN_KEYCHAIN"
+elif use_secret_tool:
+    config["telegram"]["bot_token"] = "STORED_IN_SECRET_TOOL"
+    config["voice"]["openai_api_key"] = "STORED_IN_SECRET_TOOL"
 
 with open(os.environ["_CFG_OUTPUT"], "w") as f:
     json.dump(config, f, indent=2)
@@ -243,7 +267,7 @@ chmod 600 "$RTVT_DIR/config.json"
 # Clean up env vars
 unset _CFG_BOT_TOKEN _CFG_CHAT_ID _CFG_USER_ID _CFG_PROJECT_NAME _CFG_PROJECT_DIR
 unset _CFG_WINDOW_MATCH _CFG_TMUX_SESSION _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY
-unset _CFG_USE_KEYCHAIN _CFG_OUTPUT
+unset _CFG_USE_KEYCHAIN _CFG_USE_SECRET_TOOL _CFG_OUTPUT
 
 # --- Python venv ---
 if [ "$VOICE_BACKEND" = "mlx-whisper" ]; then

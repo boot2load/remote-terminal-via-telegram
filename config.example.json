@@ -16,6 +16,7 @@
     "openai_api_key": "(or STORED_IN_KEYCHAIN)"
   },
   "security": {
-    "use_keychain": false
+    "use_keychain": false,
+    "use_secret_tool": false
   }
 }
