@@ -368,15 +368,13 @@ Press ❌ 3. No to cancel" \
       sleep 1
     done
 
-    # Write to inbox as backup
+    # Write to inbox as backup (errors must not crash the daemon)
     echo "$RESULT" | tail -n +2 | while IFS= read -r MSG; do
       [ -z "$MSG" ] && continue
       [ "$MSG" = "__ESCAPE__" ] && continue
       [ "$MSG" = "__IGNORE__" ] && continue
-      TS=$(date +%s)
       mkdir -p "$RTVT_DIR/inbox"
-      # Use mktemp for unpredictable filenames
-      INBOX_FILE=$(mktemp "$RTVT_DIR/inbox/msg_XXXXXX.txt")
+      INBOX_FILE=$(mktemp "$RTVT_DIR/inbox/msg_XXXXXXXXXX.txt" 2>/dev/null) || continue
       chmod 600 "$INBOX_FILE"
       # Strip terminal escape sequences before writing
       printf '%s' "$MSG" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$INBOX_FILE"
