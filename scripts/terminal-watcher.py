@@ -8,7 +8,7 @@ as self-editing messages with clean conversation formatting.
 Reads config from config.json for project name, window matching, and Telegram credentials.
 """
 
-import json, os, re, subprocess, time, urllib.request, urllib.parse
+import json, os, re, subprocess, sys, time, urllib.request, urllib.parse
 
 RTVT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACTIVE_FLAG = os.path.join(RTVT_DIR, ".active")
@@ -18,7 +18,31 @@ CONFIG_FILE = os.path.join(RTVT_DIR, "config.json")
 with open(CONFIG_FILE) as f:
     config = json.load(f)
 
-BOT_TOKEN = config["telegram"]["bot_token"]
+
+def get_from_keychain(account):
+    """Retrieve a secret from macOS Keychain."""
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", "remote-terminal-telegram", "-a", account, "-w"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+use_keychain = config.get("security", {}).get("use_keychain", False)
+BOT_TOKEN = ""
+if use_keychain:
+    BOT_TOKEN = get_from_keychain("bot_token") or ""
+if not BOT_TOKEN or BOT_TOKEN == "STORED_IN_KEYCHAIN":
+    BOT_TOKEN = config["telegram"].get("bot_token", "")
+if not BOT_TOKEN or BOT_TOKEN == "STORED_IN_KEYCHAIN":
+    print("ERROR: Bot token not found in Keychain or config.json", file=sys.stderr)
+    sys.exit(1)
+
 CHAT_ID = config["telegram"]["chat_id"]
 PROJECT_NAME = config.get("project", {}).get("name", "Terminal")
 WINDOW_MATCH = config.get("project", {}).get("window_match_string", "")

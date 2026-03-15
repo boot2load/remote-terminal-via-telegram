@@ -12,7 +12,7 @@ LOG_FILE="$RTVT_DIR/daemon.log"
 for pidfile in "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid"; do
   if [ -f "$pidfile" ]; then
     OLD_PID=$(cat "$pidfile")
-    if kill -0 "$OLD_PID" 2>/dev/null; then
+    if [[ "$OLD_PID" =~ ^[0-9]+$ ]] && [ "$OLD_PID" -gt 1 ] && kill -0 "$OLD_PID" 2>/dev/null; then
       kill "$OLD_PID" 2>/dev/null || true
       sleep 0.5
       kill -9 "$OLD_PID" 2>/dev/null || true
@@ -32,6 +32,7 @@ rm -f "$RTVT_DIR/inbox"/*.txt 2>/dev/null || true
 # Set offset to skip old messages (hide token from ps)
 _URL_FILE=$(mktemp)
 chmod 600 "$_URL_FILE"
+trap 'rm -f "$_URL_FILE"' EXIT
 echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates\"" > "$_URL_FILE"
 OFFSET=$(curl -s -K "$_URL_FILE" | python3 -c "import sys,json; r=json.load(sys.stdin).get('result',[]); print(max(u['update_id'] for u in r)+1 if r else 0)" 2>/dev/null || echo "0")
 echo "$OFFSET" > "$RTVT_DIR/.last_update_id"

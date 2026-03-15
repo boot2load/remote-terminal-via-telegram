@@ -33,7 +33,7 @@ echo $$ > "$PID_FILE"
 trap 'rm -rf "$LOCK_DIR" "$PID_FILE"' EXIT
 
 # Dangerous command patterns — block these from being typed into terminal
-DANGEROUS_PATTERNS='rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|-rf|--recursive|--force)|rm\s+-r\s|mkfs|dd\s+if=|:\(\)\{|\.\(\)\{|chmod\s+[ugo+]*s|chmod\s+-R\s+777|curl.*\|.*(sh|bash|python|perl|ruby)|wget.*\|.*(sh|bash|python|perl|ruby)|bash\s+<\(|sudo\s|> /dev/sd|shutdown|reboot|init\s+0|halt|/dev/tcp/|nc\s+(-[a-zA-Z]*e|--exec)|find.*-delete|find.*-exec.*rm|shred\s|osascript.*do\s+shell\s+script|defaults\s+write.*LoginHook|>\s*/etc/'
+DANGEROUS_PATTERNS='rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|-rf|--recursive|--force)|rm\s+-r\s|mkfs|dd\s+if=|:\(\)\{|\.\(\)\{|chmod\s+[ugo+]*s|chmod\s+-R\s+777|curl.*\|.*(sh|bash|python|perl|ruby)|wget.*\|.*(sh|bash|python|perl|ruby)|(bash|sh|zsh)\s+<\(|\|\s*(sh|bash|zsh)\b|base64.*\|\s*(sh|bash)|sudo\s|> /dev/sd|shutdown|reboot|init\s+0|halt|/dev/tcp/|nc\s+(-[a-zA-Z]*e|--exec)|find.*-delete|find.*-exec.*rm|shred\s|osascript.*do\s+shell\s+script|defaults\s+write.*LoginHook|>\s*/etc/|python3?\s+-c\s+.*os\.(system|exec|popen)|diskutil\s+(erase|unmount|partition)|launchctl\s+(load|submit)|crontab\s'
 
 is_dangerous() {
   echo "$1" | grep -qiE "$DANGEROUS_PATTERNS"

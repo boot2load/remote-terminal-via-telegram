@@ -36,9 +36,11 @@ rm -f "$RTVT_DIR/.active"
 for pidfile in "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid"; do
   if [ -f "$pidfile" ]; then
     OLD_PID=$(cat "$pidfile")
-    kill "$OLD_PID" 2>/dev/null || true
-    sleep 0.5
-    kill -9 "$OLD_PID" 2>/dev/null || true
+    if [[ "$OLD_PID" =~ ^[0-9]+$ ]] && [ "$OLD_PID" -gt 1 ]; then
+      kill "$OLD_PID" 2>/dev/null || true
+      sleep 0.5
+      kill -9 "$OLD_PID" 2>/dev/null || true
+    fi
     rm -f "$pidfile"
   fi
 done

@@ -50,6 +50,16 @@ if not bot_token:
 if not openai_key:
     openai_key = c["voice"].get("openai_api_key", "")
 
+# Fail clearly if token is still a placeholder
+if bot_token == "STORED_IN_KEYCHAIN":
+    print("echo \"ERROR: Bot token not found in Keychain. Run: security add-generic-password -U -s remote-terminal-telegram -a bot_token -w YOUR_TOKEN\" >&2; exit 1")
+    sys.exit(1)
+if not bot_token:
+    print("echo \"ERROR: Bot token is empty. Run setup.sh or check config.json\" >&2; exit 1")
+    sys.exit(1)
+if openai_key == "STORED_IN_KEYCHAIN":
+    openai_key = ""  # Non-critical — just disable voice
+
 exports = {
     "TELEGRAM_BOT_TOKEN": bot_token,
     "TELEGRAM_CHAT_ID": str(c["telegram"]["chat_id"]),

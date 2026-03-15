@@ -47,19 +47,29 @@ echo "  Send any message to @${BOT_NAME} in Telegram now..."
 echo "  Waiting for your message..."
 
 CHAT_ID=""
+SENDER_NAME=""
+USER_ID=""
 for i in $(seq 1 30); do
   echo "url = \"https://api.telegram.org/bot${BOT_TOKEN}/getUpdates\"" > "$_SETUP_URL"
   UPDATES=$(curl -s -K "$_SETUP_URL" 2>/dev/null)
-  CHAT_ID=$(echo "$UPDATES" | python3 -c "
+  RESULT=$(echo "$UPDATES" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 for u in data.get('result', []):
     msg = u.get('message', {})
-    if msg.get('chat', {}).get('id'):
-        print(msg['chat']['id'])
+    chat = msg.get('chat', {})
+    sender = msg.get('from', {})
+    if chat.get('id'):
+        name = sender.get('first_name', '') + ' ' + sender.get('last_name', '')
+        username = sender.get('username', '')
+        print(f'{chat[\"id\"]}|{sender.get(\"id\", chat[\"id\"])}|{name.strip()}|{username}')
         break
 " 2>/dev/null || echo "")
-  if [ -n "$CHAT_ID" ]; then
+  if [ -n "$RESULT" ]; then
+    CHAT_ID=$(echo "$RESULT" | cut -d'|' -f1)
+    USER_ID=$(echo "$RESULT" | cut -d'|' -f2)
+    SENDER_NAME=$(echo "$RESULT" | cut -d'|' -f3)
+    SENDER_USERNAME=$(echo "$RESULT" | cut -d'|' -f4)
     break
   fi
   sleep 2
@@ -67,9 +77,20 @@ done
 
 if [ -z "$CHAT_ID" ]; then
   echo "  ❌ No message received. Send a message to @${BOT_NAME} and try again."
+  rm -f "$_SETUP_URL"
   exit 1
 fi
-echo "  ✅ Chat ID: ${CHAT_ID}"
+echo ""
+echo "  Detected sender: ${SENDER_NAME} (@${SENDER_USERNAME})"
+echo "  Chat ID: ${CHAT_ID}"
+echo "  User ID: ${USER_ID}"
+read -rp "  Is this you? (y/n): " CONFIRM_SENDER
+if [ "$CONFIRM_SENDER" != "y" ]; then
+  echo "  ❌ Aborted. Run setup again after messaging the bot."
+  rm -f "$_SETUP_URL"
+  exit 1
+fi
+echo "  ✅ Sender confirmed"
 echo ""
 
 # --- Project Config ---
@@ -141,6 +162,7 @@ echo ""
 echo "Writing config.json..."
 export _CFG_BOT_TOKEN="$BOT_TOKEN"
 export _CFG_CHAT_ID="$CHAT_ID"
+export _CFG_USER_ID="$USER_ID"
 export _CFG_PROJECT_NAME="$PROJECT_NAME"
 export _CFG_PROJECT_DIR="$PROJECT_DIR"
 export _CFG_WINDOW_MATCH="$WINDOW_MATCH"
@@ -158,7 +180,7 @@ use_keychain = os.environ.get("_CFG_USE_KEYCHAIN") == "true"
 config = {
     "telegram": {
         "chat_id": os.environ["_CFG_CHAT_ID"],
-        "allowed_user_id": os.environ["_CFG_CHAT_ID"]
+        "allowed_user_id": os.environ.get("_CFG_USER_ID", os.environ["_CFG_CHAT_ID"])
     },
     "project": {
         "name": os.environ["_CFG_PROJECT_NAME"],
