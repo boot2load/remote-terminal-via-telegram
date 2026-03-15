@@ -132,7 +132,19 @@ elif [ "$OS_TYPE" = "Linux" ]; then
   # Use -l (literal) to prevent tmux from interpreting key names, then send Enter separately
   tmux send-keys -l -t "$PANE" "$MESSAGE"
   tmux send-keys -t "$PANE" Enter
+elif [[ "$OS_TYPE" == MINGW* ]] || [[ "$OS_TYPE" == MSYS* ]] || [[ "$OS_TYPE" == CYGWIN* ]]; then
+  # ── Windows: PowerShell keystroke injection ──
+  PS_SCRIPT="$SCRIPT_DIR/windows/type-to-terminal.ps1"
+  if [ ! -f "$PS_SCRIPT" ]; then
+    echo "ERROR: Windows PowerShell script not found: $PS_SCRIPT" >&2
+    exit 1
+  fi
+  MATCH_ARG=""
+  if [ -n "$WINDOW_MATCH" ]; then
+    MATCH_ARG="-WindowMatch \"$WINDOW_MATCH\""
+  fi
+  powershell.exe -ExecutionPolicy Bypass -File "$(cygpath -w "$PS_SCRIPT")" -Message "$MESSAGE" $MATCH_ARG
 else
-  echo "ERROR: Unsupported OS: $OS_TYPE" >&2
+  echo "ERROR: Unsupported OS: $OS_TYPE. Supported: macOS, Linux (tmux), Windows (Git Bash)" >&2
   exit 1
 fi

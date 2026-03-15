@@ -28,6 +28,9 @@ if [ "$OS_TYPE" = "Darwin" ]; then
 elif [ "$OS_TYPE" = "Linux" ]; then
   command -v tmux >/dev/null || { echo "❌ tmux not found. Required on Linux. Install: sudo apt install tmux"; exit 1; }
   command -v ffmpeg >/dev/null || echo "⚠️  ffmpeg not found. Voice input will not work. Install: sudo apt install ffmpeg"
+elif [[ "$OS_TYPE" == MINGW* ]] || [[ "$OS_TYPE" == MSYS* ]] || [[ "$OS_TYPE" == CYGWIN* ]]; then
+  command -v powershell.exe >/dev/null || { echo "❌ powershell.exe not found. Required on Windows."; exit 1; }
+  command -v ffmpeg >/dev/null || echo "⚠️  ffmpeg not found. Voice input will not work. Install: winget install ffmpeg"
 fi
 echo "✅ Prerequisites OK"
 echo ""
@@ -122,11 +125,16 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   echo "  Window match string: restricts the bot to a specific Terminal window."
   echo "  Leave blank to control ANY Claude Code terminal (recommended)."
   read -rp "  Window match string (blank = any Claude Code window): " WINDOW_MATCH
-else
+elif [ "$OS_TYPE" = "Linux" ]; then
   WINDOW_MATCH=""
   echo "  tmux session: restricts the bot to a specific tmux session."
   echo "  Leave blank to auto-detect the Claude Code pane (recommended)."
   read -rp "  tmux session name (blank = auto-detect): " TMUX_SESSION_NAME
+else
+  # Windows
+  echo "  Window match string: restricts the bot to a specific terminal window."
+  echo "  Leave blank to control ANY Claude Code window (recommended)."
+  read -rp "  Window match string (blank = any Claude Code window): " WINDOW_MATCH
 fi
 echo ""
 
@@ -181,6 +189,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
       echo "  ✅ OpenAI API key stored in Keychain"
     fi
   fi
+elif [[ "$OS_TYPE" == MINGW* ]] || [[ "$OS_TYPE" == MSYS* ]] || [[ "$OS_TYPE" == CYGWIN* ]]; then
+  echo "Step 5: Credential Storage"
+  echo "  Credentials will be stored in config.json (file permissions restricted)"
+  echo "  Windows Credential Manager integration is not yet supported."
 else
   echo "Step 5: Credential Storage"
   if command -v secret-tool >/dev/null 2>&1; then

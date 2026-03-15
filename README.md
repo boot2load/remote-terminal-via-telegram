@@ -17,24 +17,32 @@ Control any Claude Code terminal session remotely via Telegram. Mirror terminal 
 - **Self-editing messages**: Terminal output updates in-place (no message spam)
 - **Persistent keyboard**: One-tap Yes/No/Escape/Status/Continue buttons
 - **Works with ANY project**: Fully config-driven, not hardcoded to any specific project
-- **Cross-platform**: macOS (Terminal.app) and Linux (tmux)
-- **Minimized window support**: Works even when Terminal.app is minimized (macOS)
+- **Cross-platform**: macOS (Terminal.app), Linux (tmux), and Windows (PowerShell + Git Bash)
+- **Minimized window support**: Works even when the terminal is minimized
 
 ## Prerequisites
 
 **macOS:**
 - Terminal.app (uses AppleScript for terminal interaction)
-- Python 3.x
+- Python 3.6+
 - [Claude Code CLI](https://claude.ai/code) installed
 - A Telegram account
 - ffmpeg (for voice input): `brew install ffmpeg`
 
 **Linux:**
 - tmux (for terminal reading and keystroke injection)
-- Python 3.x
+- Python 3.6+
 - [Claude Code CLI](https://claude.ai/code) installed
 - A Telegram account
 - ffmpeg (for voice input): `sudo apt install ffmpeg`
+
+**Windows:**
+- [Git for Windows](https://git-scm.com/download/win) (provides Git Bash)
+- PowerShell 5.1+ (included with Windows 10/11)
+- Python 3.6+
+- [Claude Code CLI](https://claude.ai/code) installed
+- A Telegram account
+- ffmpeg (for voice input): `winget install ffmpeg`
 
 ## Quick Start
 
@@ -55,6 +63,11 @@ cd remote-terminal-via-telegram
 # tmux new -s claude
 # claude
 # Then /terminal-control-start
+
+# Windows: open Git Bash, then run setup and start:
+# ./setup.sh
+# Then launch Claude Code in Windows Terminal / PowerShell
+# and type /terminal-control-start
 ```
 
 ## Setup

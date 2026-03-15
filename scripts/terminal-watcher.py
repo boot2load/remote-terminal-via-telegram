@@ -16,6 +16,7 @@ PID_FILE = os.path.join(RTVT_DIR, ".watcher.pid")
 CONFIG_FILE = os.path.join(RTVT_DIR, "config.json")
 IS_MACOS = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
+IS_WINDOWS = platform.system() == "Windows" or "MINGW" in platform.platform() or "MSYS" in platform.platform()
 
 with open(CONFIG_FILE) as f:
     config = json.load(f)
@@ -208,6 +209,14 @@ def get_terminal_content():
                 ["tmux", "capture-pane", "-t", pane_id, "-p", "-S", "-200"],
                 capture_output=True, text=True, timeout=5
             )
+            return result.stdout if result.returncode == 0 else ""
+        elif IS_WINDOWS:
+            # Windows: PowerShell script reads terminal window content
+            ps_script = os.path.join(RTVT_DIR, "scripts", "windows", "read-terminal.ps1")
+            cmd = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", ps_script]
+            if WINDOW_MATCH:
+                cmd += ["-WindowMatch", WINDOW_MATCH]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             return result.stdout if result.returncode == 0 else ""
         else:
             return ""

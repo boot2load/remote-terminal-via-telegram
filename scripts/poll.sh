@@ -176,6 +176,14 @@ ASEOF
       fi
     fi
     [ -n "$ESC_PANE" ] && tmux send-keys -t "$ESC_PANE" Escape 2>/dev/null || true
+  elif [[ "$OS_TYPE" == MINGW* ]] || [[ "$OS_TYPE" == MSYS* ]] || [[ "$OS_TYPE" == CYGWIN* ]]; then
+    # Windows: PowerShell Escape key injection
+    local PS_SCRIPT="$SCRIPT_DIR/windows/send-escape.ps1"
+    if [ -f "$PS_SCRIPT" ]; then
+      local MATCH_ARG=""
+      [ -n "$WINDOW_MATCH" ] && MATCH_ARG="-WindowMatch \"$WINDOW_MATCH\""
+      powershell.exe -ExecutionPolicy Bypass -File "$(cygpath -w "$PS_SCRIPT")" $MATCH_ARG 2>/dev/null || true
+    fi
   fi
 }
 
