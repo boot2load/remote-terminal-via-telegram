@@ -173,9 +173,28 @@ for update in results:
         voice = msg.get('voice', {})
         if voice:
             file_id = voice.get('file_id', '')
-            # Validate file_id format
             if file_id and re.match(r'^[A-Za-z0-9_-]+$', file_id):
                 messages.append(f'__VOICE__{file_id}')
+                msg_count += 1
+
+        # Handle documents (PDF, TXT, etc.)
+        doc = msg.get('document', {})
+        if doc:
+            file_id = doc.get('file_id', '')
+            file_name = doc.get('file_name', 'document')
+            caption = msg.get('caption', '')
+            if file_id and re.match(r'^[A-Za-z0-9_-]+$', file_id):
+                messages.append(f'__FILE__{file_id}|{file_name}|{caption}')
+                msg_count += 1
+
+        # Handle photos (screenshots, images)
+        photos = msg.get('photo', [])
+        if photos:
+            best = photos[-1]
+            file_id = best.get('file_id', '')
+            caption = msg.get('caption', '')
+            if file_id and re.match(r'^[A-Za-z0-9_-]+$', file_id):
+                messages.append(f'__PHOTO__{file_id}|{caption}')
                 msg_count += 1
 
     cb = update.get('callback_query', {})
@@ -292,6 +311,59 @@ Press ❌ 3. No to cancel" \
         else
           "$SCRIPT_DIR/type-to-terminal.sh" "$MSG" 2>/dev/null || true
         fi
+
+      elif [[ "$MSG" == __FILE__* ]]; then
+        FILE_META="${MSG#__FILE__}"
+        FILE_ID=$(echo "$FILE_META" | cut -d'|' -f1)
+        FILE_NAME=$(echo "$FILE_META" | cut -d'|' -f2)
+        CAPTION=$(echo "$FILE_META" | cut -d'|' -f3)
+
+        tg_curl "sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          --data-urlencode "text=📎 Downloading ${FILE_NAME}..." \
+          -d disable_notification=true > /dev/null 2>&1
+
+        LOCAL_PATH=$("$SCRIPT_DIR/download-file.sh" "$FILE_ID" "$FILE_NAME" 2>/dev/null || echo "")
+        if [ -n "$LOCAL_PATH" ] && [ -f "$LOCAL_PATH" ]; then
+          tg_curl "sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=📎 File saved: ${FILE_NAME}" \
+            -d disable_notification=true > /dev/null 2>&1
+          INSTRUCTION="Please read this file: ${LOCAL_PATH}"
+          [ -n "$CAPTION" ] && INSTRUCTION="$INSTRUCTION — ${CAPTION}"
+          "$SCRIPT_DIR/type-to-terminal.sh" "$INSTRUCTION" 2>/dev/null || true
+        else
+          tg_curl "sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="❌ Failed to download file" > /dev/null 2>&1
+        fi
+
+      elif [[ "$MSG" == __PHOTO__* ]]; then
+        PHOTO_META="${MSG#__PHOTO__}"
+        PHOTO_ID=$(echo "$PHOTO_META" | cut -d'|' -f1)
+        CAPTION=$(echo "$PHOTO_META" | cut -d'|' -f2)
+        PHOTO_NAME="screenshot_$(date +%Y%m%d_%H%M%S).jpg"
+
+        tg_curl "sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="📸 Downloading image..." \
+          -d disable_notification=true > /dev/null 2>&1
+
+        LOCAL_PATH=$("$SCRIPT_DIR/download-file.sh" "$PHOTO_ID" "$PHOTO_NAME" 2>/dev/null || echo "")
+        if [ -n "$LOCAL_PATH" ] && [ -f "$LOCAL_PATH" ]; then
+          tg_curl "sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=📸 Image saved: ${PHOTO_NAME}" \
+            -d disable_notification=true > /dev/null 2>&1
+          INSTRUCTION="Please look at this screenshot: ${LOCAL_PATH}"
+          [ -n "$CAPTION" ] && INSTRUCTION="$INSTRUCTION — ${CAPTION}"
+          "$SCRIPT_DIR/type-to-terminal.sh" "$INSTRUCTION" 2>/dev/null || true
+        else
+          tg_curl "sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="❌ Failed to download image" > /dev/null 2>&1
+        fi
+
       fi
       sleep 1
     done
