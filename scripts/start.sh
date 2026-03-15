@@ -1,31 +1,48 @@
 #!/bin/bash
 # Start Remote Terminal — activates two-way Telegram sync
+# Security: PID-based process cleanup, token hidden from ps, audit logging
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/load-config.sh"
 
-# Kill any existing daemons
-pkill -9 -f "$RTVT_DIR/scripts/poll.sh" 2>/dev/null || true
-pkill -9 -f "$RTVT_DIR/scripts/terminal-watcher.py" 2>/dev/null || true
-rm -f "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid"
-sleep 1
+LOG_FILE="$RTVT_DIR/daemon.log"
+
+# Kill existing daemons via PID files (not pkill -f)
+for pidfile in "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid"; do
+  if [ -f "$pidfile" ]; then
+    OLD_PID=$(cat "$pidfile")
+    if kill -0 "$OLD_PID" 2>/dev/null; then
+      kill "$OLD_PID" 2>/dev/null || true
+      sleep 0.5
+      kill -9 "$OLD_PID" 2>/dev/null || true
+    fi
+    rm -f "$pidfile"
+  fi
+done
+rm -rf "$RTVT_DIR/.poll.lock"
+sleep 0.5
 
 # Activate
 touch "$RTVT_DIR/.active"
 mkdir -p "$RTVT_DIR/inbox"
+chmod 700 "$RTVT_DIR/inbox"
 rm -f "$RTVT_DIR/inbox"/*.txt 2>/dev/null || true
 
-# Set offset to skip old messages
-OFFSET=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" | python3 -c "import sys,json; r=json.load(sys.stdin).get('result',[]); print(max(u['update_id'] for u in r)+1 if r else 0)" 2>/dev/null || echo "0")
+# Set offset to skip old messages (hide token from ps)
+_URL_FILE=$(mktemp)
+chmod 600 "$_URL_FILE"
+echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates\"" > "$_URL_FILE"
+OFFSET=$(curl -s -K "$_URL_FILE" | python3 -c "import sys,json; r=json.load(sys.stdin).get('result',[]); print(max(u['update_id'] for u in r)+1 if r else 0)" 2>/dev/null || echo "0")
 echo "$OFFSET" > "$RTVT_DIR/.last_update_id"
 
-# Start daemons
-nohup "$RTVT_DIR/scripts/poll.sh" > /dev/null 2>&1 &
-nohup python3 "$RTVT_DIR/scripts/terminal-watcher.py" > /dev/null 2>&1 &
+# Start daemons with logging
+nohup "$RTVT_DIR/scripts/poll.sh" >> "$LOG_FILE" 2>&1 &
+nohup python3 "$RTVT_DIR/scripts/terminal-watcher.py" >> "$LOG_FILE" 2>&1 &
 
-# Send activation message with keyboard
-curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+# Send activation message with keyboard (hide token)
+echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\"" > "$_URL_FILE"
+curl -s -K "$_URL_FILE" \
   -H "Content-Type: application/json" \
   -d "{
     \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
@@ -42,4 +59,7 @@ curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" 
     }
   }" > /dev/null
 
+rm -f "$_URL_FILE"
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') Session started for ${PROJECT_NAME}" >> "$LOG_FILE"
 echo "✅ Remote Terminal activated — Telegram bot is live"

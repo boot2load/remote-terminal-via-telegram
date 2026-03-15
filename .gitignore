@@ -3,10 +3,15 @@ config.json
 .venv/
 .active
 .poll.pid
+.poll.lock/
 .watcher.pid
 .last_update_id
 .pending_voice.txt
 .voice_result.txt
+.tmp_voice_*/
 terminal.log
+daemon.log
+*.log
+nohup.out
 inbox/
 __pycache__/

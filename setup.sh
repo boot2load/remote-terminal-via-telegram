@@ -109,30 +109,46 @@ case "$VOICE_CHOICE" in
 esac
 echo ""
 
-# --- Write config ---
+# --- Write config (values passed via env vars to prevent injection) ---
 echo "Writing config.json..."
-python3 -c "
-import json
+export _CFG_BOT_TOKEN="$BOT_TOKEN"
+export _CFG_CHAT_ID="$CHAT_ID"
+export _CFG_PROJECT_NAME="$PROJECT_NAME"
+export _CFG_PROJECT_DIR="$PROJECT_DIR"
+export _CFG_WINDOW_MATCH="$WINDOW_MATCH"
+export _CFG_VOICE_BACKEND="$VOICE_BACKEND"
+export _CFG_MLX_MODEL="$MLX_MODEL"
+export _CFG_OPENAI_KEY="$OPENAI_KEY"
+export _CFG_OUTPUT="$RTVT_DIR/config.json"
+
+python3 -c '
+import json, os
 config = {
-    'telegram': {
-        'bot_token': '${BOT_TOKEN}',
-        'chat_id': '${CHAT_ID}'
+    "telegram": {
+        "bot_token": os.environ["_CFG_BOT_TOKEN"],
+        "chat_id": os.environ["_CFG_CHAT_ID"],
+        "allowed_user_id": os.environ["_CFG_CHAT_ID"]
     },
-    'project': {
-        'name': '${PROJECT_NAME}',
-        'working_directory': '${PROJECT_DIR}',
-        'window_match_string': '${WINDOW_MATCH}'
+    "project": {
+        "name": os.environ["_CFG_PROJECT_NAME"],
+        "working_directory": os.environ["_CFG_PROJECT_DIR"],
+        "window_match_string": os.environ["_CFG_WINDOW_MATCH"]
     },
-    'voice': {
-        'backend': '${VOICE_BACKEND}',
-        'mlx_model': '${MLX_MODEL}',
-        'openai_api_key': '${OPENAI_KEY}'
+    "voice": {
+        "backend": os.environ["_CFG_VOICE_BACKEND"],
+        "mlx_model": os.environ["_CFG_MLX_MODEL"],
+        "openai_api_key": os.environ.get("_CFG_OPENAI_KEY", "")
     }
 }
-with open('${RTVT_DIR}/config.json', 'w') as f:
+with open(os.environ["_CFG_OUTPUT"], "w") as f:
     json.dump(config, f, indent=2)
-print('✅ config.json written')
-"
+print("✅ config.json written")
+'
+chmod 600 "$RTVT_DIR/config.json"
+
+# Clean up env vars
+unset _CFG_BOT_TOKEN _CFG_CHAT_ID _CFG_PROJECT_NAME _CFG_PROJECT_DIR
+unset _CFG_WINDOW_MATCH _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY _CFG_OUTPUT
 
 # --- Python venv ---
 if [ "$VOICE_BACKEND" = "mlx-whisper" ]; then
@@ -140,11 +156,14 @@ if [ "$VOICE_BACKEND" = "mlx-whisper" ]; then
   python3 -m venv "$RTVT_DIR/.venv"
   "$RTVT_DIR/.venv/bin/pip" install mlx-whisper -q 2>&1 | tail -1
   echo "  Pre-downloading model..."
-  "$RTVT_DIR/.venv/bin/python3" -c "
+  export _MLX_MODEL_DL="$MLX_MODEL"
+  "$RTVT_DIR/.venv/bin/python3" -c '
+import os
 from huggingface_hub import snapshot_download
-snapshot_download('${MLX_MODEL}')
-print('  ✅ Model cached')
-" 2>/dev/null || echo "  ⚠️  Model download failed (will download on first use)"
+snapshot_download(os.environ["_MLX_MODEL_DL"])
+print("  ✅ Model cached")
+' 2>/dev/null || echo "  ⚠️  Model download failed (will download on first use)"
+  unset _MLX_MODEL_DL
 fi
 
 # --- Install slash commands ---

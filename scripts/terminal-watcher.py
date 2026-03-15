@@ -27,23 +27,42 @@ MAX_MSG_LEN = 3900
 with open(PID_FILE, "w") as f:
     f.write(str(os.getpid()))
 
-# AppleScript uses the window match string from config
-def build_applescript():
-    return f'''
-tell application "Terminal"
-    repeat with w in windows
-        try
-            set wName to name of w
-            if wName contains "{WINDOW_MATCH}" and wName contains "Claude Code" then
-                return contents of tab 1 of w
-            end if
-        end try
-    end repeat
-    return ""
-end tell
+# AppleScript receives WINDOW_MATCH via argv to prevent injection
+APPLESCRIPT = '''
+on run argv
+    set matchStr to item 1 of argv
+    tell application "Terminal"
+        repeat with w in windows
+            try
+                set wName to name of w
+                if wName contains matchStr and wName contains "Claude Code" then
+                    return contents of tab 1 of w
+                end if
+            end try
+        end repeat
+        return ""
+    end tell
+end run
 '''
 
-APPLESCRIPT = build_applescript()
+# Secret redaction patterns — masks sensitive data before sending to Telegram
+SECRET_PATTERNS = [
+    (re.compile(r'(sk-[a-zA-Z0-9]{20,})'), r'sk-***REDACTED***'),
+    (re.compile(r'(ghp_[a-zA-Z0-9]{20,})'), r'ghp_***REDACTED***'),
+    (re.compile(r'(gho_[a-zA-Z0-9]{20,})'), r'gho_***REDACTED***'),
+    (re.compile(r'(AKIA[A-Z0-9]{12,})'), r'AKIA***REDACTED***'),
+    (re.compile(r'([a-zA-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)\S+', re.IGNORECASE), r'\1***REDACTED***'),
+    (re.compile(r'(Bearer\s+)[a-zA-Z0-9._\-]+'), r'\1***REDACTED***'),
+    (re.compile(r'(\d{8,12}:[A-Za-z0-9_-]{30,})'), r'***BOT_TOKEN_REDACTED***'),
+]
+
+
+def redact_secrets(text):
+    """Remove sensitive patterns from text before sending to Telegram."""
+    for pattern, replacement in SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
 
 SEP_RE = re.compile(r'^[─━═╌┈┄\-]{10,}$')
 TABLE_BORDER_RE = re.compile(r'^[┌┬┐├┼┤└┴┘─│╌┈]+$')
@@ -53,7 +72,7 @@ TABLE_ROW_RE = re.compile(r'^\s*│(.+)│\s*$')
 def get_terminal_content():
     try:
         result = subprocess.run(
-            ["osascript", "-e", APPLESCRIPT],
+            ["osascript", "-e", APPLESCRIPT, "--", WINDOW_MATCH],
             capture_output=True, text=True, timeout=5
         )
         return result.stdout
@@ -420,6 +439,7 @@ def telegram_api(method, params):
 
 
 def send_message(text):
+    text = redact_secrets(text)
     resp = telegram_api("sendMessage", {
         "chat_id": CHAT_ID, "text": text,
         "parse_mode": "Markdown", "disable_notification": "true",
@@ -434,6 +454,7 @@ def send_message(text):
 
 
 def edit_message(message_id, text):
+    text = redact_secrets(text)
     resp = telegram_api("editMessageText", {
         "chat_id": CHAT_ID, "message_id": message_id,
         "text": text, "parse_mode": "Markdown",
