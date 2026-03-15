@@ -69,6 +69,9 @@ SECRET_PATTERNS = [
     (re.compile(r'([a-zA-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)\S+', re.IGNORECASE), r'\1***REDACTED***'),
     (re.compile(r'(Bearer\s+)[a-zA-Z0-9._\-]+'), r'\1***REDACTED***'),
     (re.compile(r'(\d{8,12}:[A-Za-z0-9_-]{30,})'), r'***BOT_TOKEN_REDACTED***'),
+    (re.compile(r'-----BEGIN [A-Z ]*(PRIVATE KEY|DSA|RSA|EC).*?-----'), r'***PRIVATE_KEY_REDACTED***'),
+    (re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}'), r'***JWT_REDACTED***'),
+    (re.compile(r'(postgres|mysql|mongodb|redis|amqp)://[^\s]+'), r'***DB_URI_REDACTED***'),
 ]
 
 

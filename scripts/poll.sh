@@ -33,13 +33,18 @@ echo $$ > "$PID_FILE"
 trap 'rm -rf "$LOCK_DIR" "$PID_FILE"' EXIT
 
 # Dangerous command patterns — block these from being typed into terminal
-DANGEROUS_PATTERNS='rm -rf|mkfs|dd if=|:(){ :|chmod -R 777|curl.*\|.*sh|wget.*\|.*sh|sudo rm|> /dev/sd|shutdown|reboot|init 0|halt'
+DANGEROUS_PATTERNS='rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|-rf|--recursive|--force)|rm\s+-r\s|mkfs|dd\s+if=|:\(\)\{|\.\(\)\{|chmod\s+[ugo+]*s|chmod\s+-R\s+777|curl.*\|.*(sh|bash|python|perl|ruby)|wget.*\|.*(sh|bash|python|perl|ruby)|bash\s+<\(|sudo\s|> /dev/sd|shutdown|reboot|init\s+0|halt|/dev/tcp/|nc\s+(-[a-zA-Z]*e|--exec)|find.*-delete|find.*-exec.*rm|shred\s|osascript.*do\s+shell\s+script|defaults\s+write.*LoginHook|>\s*/etc/'
 
 is_dangerous() {
   echo "$1" | grep -qiE "$DANGEROUS_PATTERNS"
 }
 
 log() {
+  # Log with size-based rotation (max 10MB)
+  local LOG_MAX=10485760
+  if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)" -gt "$LOG_MAX" ]; then
+    tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+  fi
   echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
 }
 
@@ -190,7 +195,8 @@ else:
     print(0)
 for m in messages:
     # Strip control characters
-    clean = re.sub(r'[\x00-\x08\x0e-\x1f\x7f]', '', m)
+    clean = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]', '', m)
+    clean = clean.replace(chr(13), ' ')
     print(clean.replace(chr(10), ' '))
 " 2>/dev/null) || continue
 
@@ -217,11 +223,19 @@ for m in messages:
         elif [ "$MSG" = "1" ]; then
           VOICE_TEXT=$(cat "$RTVT_DIR/.pending_voice.txt")
           rm -f "$RTVT_DIR/.pending_voice.txt"
-          tg_curl "sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="✅ Sent to terminal" \
-            -d disable_notification=true > /dev/null 2>&1
-          "$SCRIPT_DIR/type-to-terminal.sh" "$VOICE_TEXT" 2>/dev/null || true
+          if is_dangerous "$VOICE_TEXT"; then
+            log "BLOCKED dangerous voice command: $VOICE_TEXT"
+            tg_curl "sendMessage" \
+              -d chat_id="${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=🚫 Blocked: dangerous command in voice transcription" \
+              > /dev/null 2>&1
+          else
+            tg_curl "sendMessage" \
+              -d chat_id="${TELEGRAM_CHAT_ID}" \
+              -d text="✅ Sent to terminal" \
+              -d disable_notification=true > /dev/null 2>&1
+            "$SCRIPT_DIR/type-to-terminal.sh" "$VOICE_TEXT" 2>/dev/null || true
+          fi
         else
           rm -f "$RTVT_DIR/.pending_voice.txt"
           tg_curl "sendMessage" \
@@ -242,9 +256,11 @@ for m in messages:
             -d text="🎙 Transcribing..." \
             -d disable_notification=true > /dev/null 2>&1
 
-          "$SCRIPT_DIR/transcribe-voice.sh" "$FILE_ID" > "$RTVT_DIR/.voice_result.txt" 2>/dev/null || true
-          TRANSCRIBED=$(cat "$RTVT_DIR/.voice_result.txt" 2>/dev/null | head -1)
-          rm -f "$RTVT_DIR/.voice_result.txt"
+          _VOICE_TMP=$(mktemp "$RTVT_DIR/.voice_result_XXXXXX.txt")
+          chmod 600 "$_VOICE_TMP"
+          "$SCRIPT_DIR/transcribe-voice.sh" "$FILE_ID" > "$_VOICE_TMP" 2>/dev/null || true
+          TRANSCRIBED=$(cat "$_VOICE_TMP" 2>/dev/null | head -1)
+          rm -f "$_VOICE_TMP"
 
           if [ -n "$TRANSCRIBED" ]; then
             echo "$TRANSCRIBED" > "$RTVT_DIR/.pending_voice.txt"

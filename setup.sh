@@ -26,11 +26,15 @@ echo "  Create a bot via @BotFather in Telegram if you haven't already."
 echo ""
 read -rp "  Enter your Telegram bot token: " BOT_TOKEN
 
-# Validate token
-BOT_INFO=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getMe" 2>/dev/null)
+# Validate token (hide from ps)
+_SETUP_URL=$(mktemp)
+chmod 600 "$_SETUP_URL"
+echo "url = \"https://api.telegram.org/bot${BOT_TOKEN}/getMe\"" > "$_SETUP_URL"
+BOT_INFO=$(curl -s -K "$_SETUP_URL" 2>/dev/null)
 BOT_OK=$(echo "$BOT_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('ok',False))" 2>/dev/null || echo "False")
 if [ "$BOT_OK" != "True" ]; then
   echo "  ❌ Invalid bot token. Check and try again."
+  rm -f "$_SETUP_URL"
   exit 1
 fi
 BOT_NAME=$(echo "$BOT_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['username'])" 2>/dev/null)
@@ -44,7 +48,8 @@ echo "  Waiting for your message..."
 
 CHAT_ID=""
 for i in $(seq 1 30); do
-  UPDATES=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates" 2>/dev/null)
+  echo "url = \"https://api.telegram.org/bot${BOT_TOKEN}/getUpdates\"" > "$_SETUP_URL"
+  UPDATES=$(curl -s -K "$_SETUP_URL" 2>/dev/null)
   CHAT_ID=$(echo "$UPDATES" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -157,7 +162,7 @@ unset _CFG_WINDOW_MATCH _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY _CFG_O
 if [ "$VOICE_BACKEND" = "mlx-whisper" ]; then
   echo "Setting up Python venv for mlx-whisper..."
   python3 -m venv "$RTVT_DIR/.venv"
-  "$RTVT_DIR/.venv/bin/pip" install mlx-whisper -q 2>&1 | tail -1
+  "$RTVT_DIR/.venv/bin/pip" install 'mlx-whisper>=0.4.0,<1.0.0' -q 2>&1 | tail -1
   echo "  Pre-downloading model..."
   export _MLX_MODEL_DL="$MLX_MODEL"
   "$RTVT_DIR/.venv/bin/python3" -c '
@@ -198,10 +203,12 @@ chmod +x "$RTVT_DIR"/scripts/*.sh "$RTVT_DIR"/scripts/*.py 2>/dev/null || true
 # --- Send test message ---
 echo ""
 echo "Sending test message to Telegram..."
-curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+echo "url = \"https://api.telegram.org/bot${BOT_TOKEN}/sendMessage\"" > "$_SETUP_URL"
+curl -s -K "$_SETUP_URL" \
   -d chat_id="${CHAT_ID}" \
-  -d text="🟢 Remote Terminal via Telegram is configured for ${PROJECT_NAME}!" \
+  --data-urlencode "text=🟢 Remote Terminal via Telegram is configured for ${PROJECT_NAME}!" \
   > /dev/null
+rm -f "$_SETUP_URL"
 echo "✅ Check your Telegram!"
 
 # --- Summary ---
