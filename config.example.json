@@ -7,7 +7,8 @@
   "project": {
     "name": "Terminal",
     "working_directory": "",
-    "window_match_string": ""
+    "window_match_string": "",
+    "tmux_session": ""
   },
   "voice": {
     "backend": "mlx-whisper",

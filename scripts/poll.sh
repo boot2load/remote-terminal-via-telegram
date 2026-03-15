@@ -39,10 +39,30 @@ is_dangerous() {
   echo "$1" | grep -qiE "$DANGEROUS_PATTERNS"
 }
 
+OS_TYPE="$(uname -s)"
+
+# Cross-platform stat: file size
+file_size() {
+  if [ "$OS_TYPE" = "Darwin" ]; then
+    stat -f%z "$1" 2>/dev/null || echo 0
+  else
+    stat -c%s "$1" 2>/dev/null || echo 0
+  fi
+}
+
+# Cross-platform stat: modification time (epoch seconds)
+file_mtime() {
+  if [ "$OS_TYPE" = "Darwin" ]; then
+    stat -f %m "$1" 2>/dev/null || echo 0
+  else
+    stat -c %Y "$1" 2>/dev/null || echo 0
+  fi
+}
+
 log() {
   # Log with size-based rotation (max 10MB)
   local LOG_MAX=10485760
-  if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)" -gt "$LOG_MAX" ]; then
+  if [ -f "$LOG_FILE" ] && [ "$(file_size "$LOG_FILE")" -gt "$LOG_MAX" ]; then
     tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
   fi
   echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
@@ -58,8 +78,10 @@ if [ -f "$OFFSET_FILE" ]; then
 fi
 
 send_escape() {
-  if [ -n "$WINDOW_MATCH" ]; then
-    osascript - "$WINDOW_MATCH" <<'ASEOF' 2>/dev/null || true
+  if [ "$OS_TYPE" = "Darwin" ]; then
+    # macOS: AppleScript Escape key injection
+    if [ -n "$WINDOW_MATCH" ]; then
+      osascript - "$WINDOW_MATCH" <<'ASEOF' 2>/dev/null || true
 on run argv
     set matchStr to item 1 of argv
     tell application "Terminal"
@@ -83,8 +105,8 @@ on run argv
     end tell
 end run
 ASEOF
-  else
-    osascript <<'ASEOF' 2>/dev/null || true
+    else
+      osascript <<'ASEOF' 2>/dev/null || true
 tell application "Terminal"
     repeat with w in windows
         try
@@ -104,6 +126,26 @@ tell application "Terminal"
     end repeat
 end tell
 ASEOF
+    fi
+  elif [ "$OS_TYPE" = "Linux" ]; then
+    # Linux: tmux send Escape key
+    PANE=$("$SCRIPT_DIR/type-to-terminal.sh" "__FIND_PANE__" 2>/dev/null && echo "" || echo "")
+    # Direct tmux escape — find pane and send Escape
+    TMUX_SESSION="${TMUX_SESSION:-}"
+    if [ -n "$TMUX_SESSION" ]; then
+      tmux send-keys -t "$TMUX_SESSION" Escape 2>/dev/null || true
+    else
+      # Find Claude pane and send Escape
+      PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_current_command} #{pane_title}' 2>/dev/null | grep -i claude | head -1 | awk '{print $1}')
+      if [ -z "$PANE" ]; then
+        # Fallback: check content
+        PANE=$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while read -r p; do
+          [ -z "$p" ] && continue
+          tmux capture-pane -t "$p" -p -S -5 2>/dev/null | grep -q "Claude Code\|⏺" && echo "$p" && break
+        done)
+      fi
+      [ -n "$PANE" ] && tmux send-keys -t "$PANE" Escape 2>/dev/null || true
+    fi
   fi
 }
 
@@ -235,7 +277,7 @@ for m in messages:
       elif [ "$MSG" = "__IGNORE__" ]; then
         continue
       elif [ -f "$RTVT_DIR/.pending_voice.txt" ] && { [ "$MSG" = "1" ] || [ "$MSG" = "3" ]; }; then
-        VOICE_AGE=$(( $(date +%s) - $(stat -f %m "$RTVT_DIR/.pending_voice.txt" 2>/dev/null || echo 0) ))
+        VOICE_AGE=$(( $(date +%s) - $(file_mtime "$RTVT_DIR/.pending_voice.txt") ))
         if [ "$VOICE_AGE" -gt 60 ]; then
           rm -f "$RTVT_DIR/.pending_voice.txt"
           "$SCRIPT_DIR/type-to-terminal.sh" "$MSG" 2>/dev/null || true

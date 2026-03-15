@@ -22,10 +22,12 @@ config_file = os.environ["_RTVT_CONFIG_FILE"]
 with open(config_file) as f:
     c = json.load(f)
 
-use_keychain = c.get("security", {}).get("use_keychain", False)
+use_keychain = c.get("security", {}).get("use_keychain", False) and sys.platform == "darwin"
 
 def get_from_keychain(service, account):
-    """Retrieve a secret from macOS Keychain."""
+    """Retrieve a secret from macOS Keychain (macOS only)."""
+    if sys.platform != "darwin":
+        return None
     try:
         result = subprocess.run(
             ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
@@ -67,6 +69,7 @@ exports = {
     "PROJECT_NAME": c.get("project", {}).get("name", "Terminal"),
     "PROJECT_DIR": c.get("project", {}).get("working_directory", ""),
     "WINDOW_MATCH": c.get("project", {}).get("window_match_string", ""),
+    "TMUX_SESSION": c.get("project", {}).get("tmux_session", ""),
     "VOICE_BACKEND": c["voice"]["backend"],
     "MLX_MODEL": c["voice"]["mlx_model"],
     "OPENAI_API_KEY": openai_key,

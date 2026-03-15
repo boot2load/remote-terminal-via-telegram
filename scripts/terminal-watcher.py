@@ -8,19 +8,23 @@ as self-editing messages with clean conversation formatting.
 Reads config from config.json for project name, window matching, and Telegram credentials.
 """
 
-import json, os, re, subprocess, sys, time, urllib.request, urllib.parse
+import json, os, platform, re, subprocess, sys, time, urllib.request, urllib.parse
 
 RTVT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACTIVE_FLAG = os.path.join(RTVT_DIR, ".active")
 PID_FILE = os.path.join(RTVT_DIR, ".watcher.pid")
 CONFIG_FILE = os.path.join(RTVT_DIR, "config.json")
+IS_MACOS = platform.system() == "Darwin"
+IS_LINUX = platform.system() == "Linux"
 
 with open(CONFIG_FILE) as f:
     config = json.load(f)
 
 
 def get_from_keychain(account):
-    """Retrieve a secret from macOS Keychain."""
+    """Retrieve a secret from macOS Keychain (macOS only)."""
+    if not IS_MACOS:
+        return None
     try:
         result = subprocess.run(
             ["security", "find-generic-password", "-s", "remote-terminal-telegram", "-a", account, "-w"],
@@ -33,7 +37,7 @@ def get_from_keychain(account):
     return None
 
 
-use_keychain = config.get("security", {}).get("use_keychain", False)
+use_keychain = config.get("security", {}).get("use_keychain", False) and IS_MACOS
 BOT_TOKEN = ""
 if use_keychain:
     BOT_TOKEN = get_from_keychain("bot_token") or ""
@@ -46,13 +50,13 @@ if not BOT_TOKEN or BOT_TOKEN == "STORED_IN_KEYCHAIN":
 CHAT_ID = config["telegram"]["chat_id"]
 PROJECT_NAME = config.get("project", {}).get("name", "Terminal")
 WINDOW_MATCH = config.get("project", {}).get("window_match_string", "")
+TMUX_SESSION = config.get("project", {}).get("tmux_session", "")
 MAX_MSG_LEN = 3900
 
 with open(PID_FILE, "w") as f:
     f.write(str(os.getpid()))
 
-# AppleScript: if WINDOW_MATCH is empty, match ANY Claude Code window
-# WINDOW_MATCH passed via argv to prevent injection
+# ── macOS: AppleScript for Terminal.app ──
 APPLESCRIPT_WITH_MATCH = '''
 on run argv
     set matchStr to item 1 of argv
@@ -84,6 +88,55 @@ tell application "Terminal"
 end tell
 '''
 
+
+def _find_tmux_pane():
+    """Find the tmux pane running Claude Code."""
+    try:
+        # If a specific session is configured, use it
+        if TMUX_SESSION:
+            result = subprocess.run(
+                ["tmux", "list-panes", "-t", TMUX_SESSION, "-F", "#{pane_id}"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip().split("\n")[0]
+
+        # Otherwise, search all panes for one running Claude Code
+        result = subprocess.run(
+            ["tmux", "list-panes", "-a", "-F", "#{pane_id} #{pane_current_command} #{pane_title}"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.strip().split("\n"):
+            parts = line.split(" ", 2)
+            if len(parts) >= 2:
+                pane_id = parts[0]
+                rest = " ".join(parts[1:]).lower()
+                if "claude" in rest:
+                    return pane_id
+
+        # Fallback: check pane content for Claude Code markers
+        result = subprocess.run(
+            ["tmux", "list-panes", "-a", "-F", "#{pane_id}"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return None
+        for pane_id in result.stdout.strip().split("\n"):
+            pane_id = pane_id.strip()
+            if not pane_id:
+                continue
+            content = subprocess.run(
+                ["tmux", "capture-pane", "-t", pane_id, "-p", "-S", "-50"],
+                capture_output=True, text=True, timeout=5
+            )
+            if content.returncode == 0 and ("Claude Code" in content.stdout or "⏺" in content.stdout):
+                return pane_id
+    except Exception:
+        pass
+    return None
+
 # Secret redaction patterns — masks sensitive data before sending to Telegram
 SECRET_PATTERNS = [
     (re.compile(r'(sk-[a-zA-Z0-9]{20,})'), r'sk-***REDACTED***'),
@@ -113,17 +166,31 @@ TABLE_ROW_RE = re.compile(r'^\s*│(.+)│\s*$')
 
 def get_terminal_content():
     try:
-        if WINDOW_MATCH:
+        if IS_MACOS:
+            # macOS: AppleScript reads Terminal.app window contents
+            if WINDOW_MATCH:
+                result = subprocess.run(
+                    ["osascript", "-e", APPLESCRIPT_WITH_MATCH, "--", WINDOW_MATCH],
+                    capture_output=True, text=True, timeout=5
+                )
+            else:
+                result = subprocess.run(
+                    ["osascript", "-e", APPLESCRIPT_ANY],
+                    capture_output=True, text=True, timeout=5
+                )
+            return result.stdout
+        elif IS_LINUX:
+            # Linux: tmux capture-pane reads terminal contents
+            pane_id = _find_tmux_pane()
+            if not pane_id:
+                return ""
             result = subprocess.run(
-                ["osascript", "-e", APPLESCRIPT_WITH_MATCH, "--", WINDOW_MATCH],
+                ["tmux", "capture-pane", "-t", pane_id, "-p", "-S", "-200"],
                 capture_output=True, text=True, timeout=5
             )
+            return result.stdout if result.returncode == 0 else ""
         else:
-            result = subprocess.run(
-                ["osascript", "-e", APPLESCRIPT_ANY],
-                capture_output=True, text=True, timeout=5
-            )
-        return result.stdout
+            return ""
     except Exception:
         return ""
 

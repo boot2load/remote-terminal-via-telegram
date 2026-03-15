@@ -17,15 +17,24 @@ Control any Claude Code terminal session remotely via Telegram. Mirror terminal 
 - **Self-editing messages**: Terminal output updates in-place (no message spam)
 - **Persistent keyboard**: One-tap Yes/No/Escape/Status/Continue buttons
 - **Works with ANY project**: Fully config-driven, not hardcoded to any specific project
-- **Minimized window support**: Works even when Terminal.app is minimized
+- **Cross-platform**: macOS (Terminal.app) and Linux (tmux)
+- **Minimized window support**: Works even when Terminal.app is minimized (macOS)
 
 ## Prerequisites
 
-- macOS with Terminal.app (uses AppleScript for terminal interaction)
+**macOS:**
+- Terminal.app (uses AppleScript for terminal interaction)
 - Python 3.x
 - [Claude Code CLI](https://claude.ai/code) installed
 - A Telegram account
 - ffmpeg (for voice input): `brew install ffmpeg`
+
+**Linux:**
+- tmux (for terminal reading and keystroke injection)
+- Python 3.x
+- [Claude Code CLI](https://claude.ai/code) installed
+- A Telegram account
+- ffmpeg (for voice input): `sudo apt install ffmpeg`
 
 ## Quick Start
 
@@ -41,6 +50,11 @@ cd remote-terminal-via-telegram
 
 # 4. In your project's terminal, launch Claude Code and type:
 /terminal-control-start
+
+# Linux: run Claude Code inside tmux first:
+# tmux new -s claude
+# claude
+# Then /terminal-control-start
 ```
 
 ## Setup
@@ -132,7 +146,8 @@ All settings are stored in `config.json` (created by `setup.sh`):
   "project": {
     "name": "Terminal",
     "working_directory": "",
-    "window_match_string": ""
+    "window_match_string": "",
+    "tmux_session": ""
   },
   "voice": {
     "backend": "mlx-whisper",
@@ -146,15 +161,32 @@ All settings are stored in `config.json` (created by `setup.sh`):
 
 - **`name`**: Display name in Telegram messages (e.g., "MyApp Terminal")
 - **`working_directory`**: Optional. If set, slash commands are also installed there
-- **`window_match_string`**: Optional. If empty, the bot controls **any** Claude Code terminal window. If set (e.g., "MyApp"), it only matches Terminal windows with that string in the title
+- **`window_match_string`**: (macOS) Optional. If empty, the bot controls **any** Claude Code terminal window. If set (e.g., "MyApp"), it only matches Terminal windows with that string in the title
+- **`tmux_session`**: (Linux) Optional. If empty, the bot auto-detects the tmux pane running Claude Code. If set (e.g., "claude"), it targets that specific tmux session
 
 ### Switching Projects
 
-No reconfiguration needed — if `window_match_string` is empty, the bot automatically follows whichever Claude Code terminal is active. Just `cd` to a different project and the bot keeps working.
+No reconfiguration needed — if `window_match_string` (macOS) or `tmux_session` (Linux) is empty, the bot automatically follows whichever Claude Code terminal is active.
 
-## Security: macOS Keychain (Optional)
+### Linux: Running Claude Code in tmux
 
-During setup, you can choose to store sensitive credentials (bot token, OpenAI API key) in macOS Keychain instead of `config.json`.
+On Linux, Claude Code must run inside a tmux session for the bot to read its output and send input:
+
+```bash
+# Start a tmux session
+tmux new -s claude
+
+# Run Claude Code inside it
+claude
+
+# The bot will auto-detect this pane, or set "tmux_session": "claude" in config.json
+```
+
+## Security: Credential Storage
+
+**macOS:** During setup, you can choose to store sensitive credentials (bot token, OpenAI API key) in macOS Keychain instead of `config.json`.
+
+**Linux:** Credentials are stored in `config.json` with `600` file permissions (owner-only read/write).
 
 **With Keychain enabled:**
 - Bot token and API keys are stored in your login Keychain

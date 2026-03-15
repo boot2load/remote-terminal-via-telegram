@@ -11,12 +11,23 @@ echo "║  Remote Terminal via Telegram — Setup    ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
+# --- Detect OS ---
+OS_TYPE="$(uname -s)"
+echo "Platform: $OS_TYPE"
+echo ""
+
 # --- Prerequisites ---
 echo "Checking prerequisites..."
 command -v python3 >/dev/null || { echo "❌ python3 not found. Install Python 3."; exit 1; }
-command -v osascript >/dev/null || { echo "⚠️  osascript not found. This tool requires macOS Terminal.app."; }
-command -v ffmpeg >/dev/null || echo "⚠️  ffmpeg not found. Voice input will not work. Install: brew install ffmpeg"
 command -v curl >/dev/null || { echo "❌ curl not found."; exit 1; }
+
+if [ "$OS_TYPE" = "Darwin" ]; then
+  command -v osascript >/dev/null || { echo "⚠️  osascript not found. Terminal.app integration won't work."; }
+  command -v ffmpeg >/dev/null || echo "⚠️  ffmpeg not found. Voice input will not work. Install: brew install ffmpeg"
+elif [ "$OS_TYPE" = "Linux" ]; then
+  command -v tmux >/dev/null || { echo "❌ tmux not found. Required on Linux. Install: sudo apt install tmux"; exit 1; }
+  command -v ffmpeg >/dev/null || echo "⚠️  ffmpeg not found. Voice input will not work. Install: sudo apt install ffmpeg"
+fi
 echo "✅ Prerequisites OK"
 echo ""
 
@@ -106,55 +117,71 @@ if [ -n "$PROJECT_DIR" ] && [ ! -d "$PROJECT_DIR" ]; then
   [ "$CONT" = "y" ] || exit 1
 fi
 
-echo "  Window match string: restricts the bot to a specific Terminal window."
-echo "  Leave blank to control ANY Claude Code terminal (recommended)."
-read -rp "  Window match string (blank = any Claude Code window): " WINDOW_MATCH
+if [ "$OS_TYPE" = "Darwin" ]; then
+  echo "  Window match string: restricts the bot to a specific Terminal window."
+  echo "  Leave blank to control ANY Claude Code terminal (recommended)."
+  read -rp "  Window match string (blank = any Claude Code window): " WINDOW_MATCH
+else
+  WINDOW_MATCH=""
+  echo "  tmux session: restricts the bot to a specific tmux session."
+  echo "  Leave blank to auto-detect the Claude Code pane (recommended)."
+  read -rp "  tmux session name (blank = auto-detect): " TMUX_SESSION_NAME
+fi
 echo ""
 
 # --- Voice ---
 echo "Step 4: Voice Input"
-echo "  1) mlx-whisper (local, Apple Silicon, free)"
-echo "  2) OpenAI Whisper API (cloud, fast, requires API key)"
-echo "  3) None (disable voice input)"
-read -rp "  Choose (1/2/3): " VOICE_CHOICE
-
 VOICE_BACKEND="none"
 MLX_MODEL="mlx-community/whisper-tiny.en-mlx"
 OPENAI_KEY=""
 
-case "$VOICE_CHOICE" in
-  1)
-    VOICE_BACKEND="mlx-whisper"
-    read -rp "  MLX model (default: ${MLX_MODEL}): " MLX_INPUT
-    MLX_MODEL="${MLX_INPUT:-$MLX_MODEL}"
-    ;;
-  2)
-    VOICE_BACKEND="openai"
-    read -rp "  OpenAI API key: " OPENAI_KEY
-    ;;
-  3)
-    VOICE_BACKEND="none"
-    ;;
-esac
+if [ "$OS_TYPE" = "Darwin" ]; then
+  echo "  1) mlx-whisper (local, Apple Silicon, free)"
+  echo "  2) OpenAI Whisper API (cloud, fast, requires API key)"
+  echo "  3) None (disable voice input)"
+  read -rp "  Choose (1/2/3): " VOICE_CHOICE
+  case "$VOICE_CHOICE" in
+    1) VOICE_BACKEND="mlx-whisper"
+       read -rp "  MLX model (default: ${MLX_MODEL}): " MLX_INPUT
+       MLX_MODEL="${MLX_INPUT:-$MLX_MODEL}" ;;
+    2) VOICE_BACKEND="openai"
+       read -rp "  OpenAI API key: " OPENAI_KEY ;;
+    3) VOICE_BACKEND="none" ;;
+  esac
+else
+  echo "  1) OpenAI Whisper API (cloud, fast, requires API key)"
+  echo "  2) None (disable voice input)"
+  read -rp "  Choose (1/2): " VOICE_CHOICE
+  case "$VOICE_CHOICE" in
+    1) VOICE_BACKEND="openai"
+       read -rp "  OpenAI API key: " OPENAI_KEY ;;
+    *) VOICE_BACKEND="none" ;;
+  esac
+fi
 echo ""
 
-# --- Security: Keychain ---
-echo "Step 5: Credential Storage"
-echo "  1) macOS Keychain (recommended — secrets stored securely, not in files)"
-echo "  2) Config file only (secrets in config.json with 600 permissions)"
-read -rp "  Choose (1/2): " KEYCHAIN_CHOICE
-
+# --- Security: Credential Storage ---
 USE_KEYCHAIN=false
-if [ "$KEYCHAIN_CHOICE" = "1" ]; then
-  USE_KEYCHAIN=true
-  echo "  Storing bot token in macOS Keychain..."
-  security add-generic-password -U -s "remote-terminal-telegram" -a "bot_token" -w "$BOT_TOKEN" 2>/dev/null
-  echo "  ✅ Bot token stored in Keychain"
+if [ "$OS_TYPE" = "Darwin" ]; then
+  echo "Step 5: Credential Storage"
+  echo "  1) macOS Keychain (recommended — secrets stored securely, not in files)"
+  echo "  2) Config file only (secrets in config.json with 600 permissions)"
+  read -rp "  Choose (1/2): " KEYCHAIN_CHOICE
 
-  if [ -n "$OPENAI_KEY" ]; then
-    security add-generic-password -U -s "remote-terminal-telegram" -a "openai_api_key" -w "$OPENAI_KEY" 2>/dev/null
-    echo "  ✅ OpenAI API key stored in Keychain"
+  if [ "$KEYCHAIN_CHOICE" = "1" ]; then
+    USE_KEYCHAIN=true
+    echo "  Storing bot token in macOS Keychain..."
+    security add-generic-password -U -s "remote-terminal-telegram" -a "bot_token" -w "$BOT_TOKEN" 2>/dev/null
+    echo "  ✅ Bot token stored in Keychain"
+
+    if [ -n "$OPENAI_KEY" ]; then
+      security add-generic-password -U -s "remote-terminal-telegram" -a "openai_api_key" -w "$OPENAI_KEY" 2>/dev/null
+      echo "  ✅ OpenAI API key stored in Keychain"
+    fi
   fi
+else
+  echo "Step 5: Credential Storage"
+  echo "  Credentials will be stored in config.json (file permissions: 600)"
 fi
 echo ""
 
@@ -165,7 +192,8 @@ export _CFG_CHAT_ID="$CHAT_ID"
 export _CFG_USER_ID="$USER_ID"
 export _CFG_PROJECT_NAME="$PROJECT_NAME"
 export _CFG_PROJECT_DIR="$PROJECT_DIR"
-export _CFG_WINDOW_MATCH="$WINDOW_MATCH"
+export _CFG_WINDOW_MATCH="${WINDOW_MATCH:-}"
+export _CFG_TMUX_SESSION="${TMUX_SESSION_NAME:-}"
 export _CFG_VOICE_BACKEND="$VOICE_BACKEND"
 export _CFG_MLX_MODEL="$MLX_MODEL"
 export _CFG_OPENAI_KEY="$OPENAI_KEY"
@@ -185,7 +213,8 @@ config = {
     "project": {
         "name": os.environ["_CFG_PROJECT_NAME"],
         "working_directory": os.environ["_CFG_PROJECT_DIR"],
-        "window_match_string": os.environ["_CFG_WINDOW_MATCH"]
+        "window_match_string": os.environ["_CFG_WINDOW_MATCH"],
+        "tmux_session": os.environ.get("_CFG_TMUX_SESSION", "")
     },
     "voice": {
         "backend": os.environ["_CFG_VOICE_BACKEND"],
@@ -212,7 +241,7 @@ chmod 600 "$RTVT_DIR/config.json"
 
 # Clean up env vars
 unset _CFG_BOT_TOKEN _CFG_CHAT_ID _CFG_PROJECT_NAME _CFG_PROJECT_DIR
-unset _CFG_WINDOW_MATCH _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY
+unset _CFG_WINDOW_MATCH _CFG_TMUX_SESSION _CFG_VOICE_BACKEND _CFG_MLX_MODEL _CFG_OPENAI_KEY
 unset _CFG_USE_KEYCHAIN _CFG_OUTPUT
 
 # --- Python venv ---
