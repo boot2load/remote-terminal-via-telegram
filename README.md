@@ -223,19 +223,19 @@ security add-generic-password -U -s "remote-terminal-telegram" -a "bot_token" -w
 ## Architecture
 
 ```
-┌─────────────────┐         ┌──────────────────┐
-│  Terminal.app    │         │  Telegram Bot API │
-│  (Claude Code)   │         │                  │
-└────────┬────────┘         └────────┬─────────┘
-         │                           │
-    ┌────┴────┐                 ┌────┴────┐
-    │ terminal│ AppleScript     │  poll.sh │ HTTP polling
-    │ watcher │ reads content   │         │ reads messages
-    │  .py    │────────────────►│         │
-    │         │  sends to TG    │         │────────────────►
-    └─────────┘                 │         │ types into terminal
-                                │         │ via type-to-terminal.sh
-                                └─────────┘
+┌─────────────────┐      ┌──────────────────┐
+│  Terminal.app    │      │ Telegram Bot API │
+│  (Claude Code)   │      │                  │
+└────────┬────────┘      └────────┬─────────┘
+         │                        │
+    ┌────┴────┐              ┌────┴────┐
+    │ terminal│ AppleScript  │ poll.sh │ HTTP polling
+    │ watcher │ reads content│         │ reads messages
+    │  .py    │─────────────►│         │
+    │         │ sends to TG  │         │──────────────►
+    └─────────┘              │         │ types into terminal
+                             │         │ via type-to-terminal.sh
+                             └─────────┘
 ```
 
 ## Files
