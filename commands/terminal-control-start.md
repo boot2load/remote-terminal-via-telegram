@@ -1,16 +1,16 @@
-Activate Remote Terminal via Telegram — two-way Telegram synchronization.
+Activate Claude Code Telegram Agent — two-way Telegram synchronization.
 
 Run this single command to activate everything:
 
 ```bash
-~/remote-terminal-via-telegram/scripts/start.sh
+~/claude-code-telegram-agent/scripts/start.sh
 ```
 
 Confirm to the user that Remote Terminal is active. From this point on, all your tool activity (edits, commands, reads, searches) will be sent to Telegram automatically.
 
 You MUST also periodically check for incoming Telegram messages by running:
 ```bash
-~/remote-terminal-via-telegram/scripts/check-inbox.sh
+~/claude-code-telegram-agent/scripts/check-inbox.sh
 ```
 Do this after completing each task or action.
 

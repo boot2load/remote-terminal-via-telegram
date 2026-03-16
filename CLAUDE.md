@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Remote Terminal via Telegram — a bridge between Claude Code terminal sessions and Telegram. Mirrors terminal output, sends commands, handles approvals, and supports voice input. Works with any project — fully config-driven.
+Claude Code Telegram Agent — a bridge between Claude Code terminal sessions and Telegram. Mirrors terminal output, sends commands, handles approvals, and supports voice input. Works with any project — fully config-driven.
 
 ## Commands
 

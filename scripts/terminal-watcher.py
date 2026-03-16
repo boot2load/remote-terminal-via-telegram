@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Remote Terminal via Telegram — Terminal Watcher
+Claude Code Telegram Agent — Terminal Watcher
 
 Watches a Claude Code terminal session and mirrors output to Telegram
 as self-editing messages with clean conversation formatting.

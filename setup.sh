@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remote Terminal via Telegram — Interactive Setup Wizard
+# Claude Code Telegram Agent — Interactive Setup Wizard
 # Creates config.json and installs everything needed
 
 set -euo pipefail
@@ -7,7 +7,7 @@ set -euo pipefail
 RTVT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "╔══════════════════════════════════════════╗"
-echo "║  Remote Terminal via Telegram — Setup    ║"
+echo "║  Claude Code Telegram Agent — Setup    ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
@@ -302,11 +302,11 @@ fi
 echo "Installing Claude Code slash commands..."
 mkdir -p "$HOME/.claude/commands"
 
-sed "s|~/remote-terminal-via-telegram|${RTVT_DIR}|g" \
+sed "s|~/claude-code-telegram-agent|${RTVT_DIR}|g" \
   "$RTVT_DIR/commands/terminal-control-start.md" \
   > "$HOME/.claude/commands/terminal-control-start.md"
 
-sed "s|~/remote-terminal-via-telegram|${RTVT_DIR}|g" \
+sed "s|~/claude-code-telegram-agent|${RTVT_DIR}|g" \
   "$RTVT_DIR/commands/terminal-control-end.md" \
   > "$HOME/.claude/commands/terminal-control-end.md"
 
@@ -329,7 +329,7 @@ echo "Sending test message to Telegram..."
 echo "url = \"https://api.telegram.org/bot${BOT_TOKEN}/sendMessage\"" > "$_SETUP_URL"
 curl -s -K "$_SETUP_URL" \
   -d chat_id="${CHAT_ID}" \
-  --data-urlencode "text=🟢 Remote Terminal via Telegram is configured for ${PROJECT_NAME}!" \
+  --data-urlencode "text=🟢 Claude Code Telegram Agent is configured for ${PROJECT_NAME}!" \
   > /dev/null
 rm -f "$_SETUP_URL"
 echo "✅ Check your Telegram!"

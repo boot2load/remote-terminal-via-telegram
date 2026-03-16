@@ -1,4 +1,4 @@
-# Remote Terminal via Telegram
+# Claude Code Telegram Agent
 
 Control any Claude Code terminal session remotely via Telegram. Mirror terminal output, send commands, approve/reject actions, and use voice input — all from your phone.
 
@@ -48,8 +48,8 @@ Control any Claude Code terminal session remotely via Telegram. Mirror terminal 
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/yourusername/remote-terminal-via-telegram.git
-cd remote-terminal-via-telegram
+git clone https://github.com/boot2load/claude-code-telegram-agent.git
+cd claude-code-telegram-agent
 
 # 2. Create a Telegram bot via @BotFather and get your bot token
 
@@ -223,19 +223,20 @@ security add-generic-password -U -s "remote-terminal-telegram" -a "bot_token" -w
 ## Architecture
 
 ```
-┌─────────────────┐      ┌──────────────────┐
-│  Terminal.app    │      │ Telegram Bot API │
-│  (Claude Code)   │      │                  │
-└────────┬────────┘      └────────┬─────────┘
-         │                        │
-    ┌────┴────┐              ┌────┴────┐
-    │ terminal│ AppleScript  │ poll.sh │ HTTP polling
-    │ watcher │ reads content│         │ reads messages
-    │  .py    │─────────────►│         │
-    │         │ sends to TG  │         │──────────────►
-    └─────────┘              │         │ types into terminal
-                             │         │ via type-to-terminal.sh
-                             └─────────┘
+┌────────────────┐       ┌──────────────────┐
+│ Terminal.app   │       │ Telegram Bot API │
+│ (Claude Code)  │       │                  │
+└───────┬────────┘       └────────┬─────────┘
+        │                         │
+   ┌────┴─────┐             ┌────┴─────┐
+   │ terminal │ AppleScript │ poll.sh  │ HTTP polling
+   │ watcher  │ reads       │          │ reads messages
+   │ .py      │ content     │          │
+   │          │────────────►│          │
+   │          │ sends to TG │          │─────────────►
+   └──────────┘             │          │ types into terminal
+                            │          │ via type-to-terminal.sh
+                            └──────────┘
 ```
 
 ## Files
