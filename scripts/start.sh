@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/load-config.sh"
 LOG_FILE="$RTVT_DIR/daemon.log"
 
 # Kill existing daemons via PID files (not pkill -f)
-for pidfile in "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid"; do
+for pidfile in "$RTVT_DIR/.poll.pid" "$RTVT_DIR/.watcher.pid" "$RTVT_DIR/.watchdog.pid"; do
   if [ -f "$pidfile" ]; then
     OLD_PID=$(cat "$pidfile")
     if [[ "$OLD_PID" =~ ^[0-9]+$ ]] && [ "$OLD_PID" -gt 1 ] && kill -0 "$OLD_PID" 2>/dev/null; then
@@ -30,6 +30,7 @@ sleep 0.5
 
 # Activate
 touch "$RTVT_DIR/.active"
+date +%s > "$RTVT_DIR/.session_start"
 mkdir -p "$RTVT_DIR/inbox"
 chmod 700 "$RTVT_DIR/inbox"
 rm -f "$RTVT_DIR/inbox"/*.txt 2>/dev/null || true
@@ -45,6 +46,9 @@ echo "$OFFSET" > "$RTVT_DIR/.last_update_id"
 # Start daemons with logging
 nohup "$RTVT_DIR/scripts/poll.sh" >> "$LOG_FILE" 2>&1 &
 nohup python3 "$RTVT_DIR/scripts/terminal-watcher.py" >> "$LOG_FILE" 2>&1 &
+
+# Start watchdog daemon to auto-restart crashed daemons
+nohup "$RTVT_DIR/scripts/watchdog.sh" >> "$LOG_FILE" 2>&1 &
 
 # Send activation message with keyboard (hide token, safe JSON via python3)
 echo "url = \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\"" > "$_URL_FILE"

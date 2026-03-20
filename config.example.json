@@ -18,5 +18,6 @@
   "security": {
     "use_keychain": false,
     "use_secret_tool": false
-  }
+  },
+  "idle_timeout_seconds": 300
 }

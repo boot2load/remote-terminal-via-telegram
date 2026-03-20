@@ -23,8 +23,52 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # Escape backslashes, double quotes, tabs, and newlines for AppleScript
   MESSAGE_ESCAPED=$(printf '%s' "$MESSAGE" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\t' ' ' | tr '\n' ' ')
 
+  # Check if message contains non-ASCII characters (Cyrillic, emoji, CJK, etc.)
+  if printf '%s' "$MESSAGE" | LC_ALL=C grep -q '[^[:print:][:space:]]' 2>/dev/null; then
+    USE_CLIPBOARD=true
+  else
+    USE_CLIPBOARD=false
+  fi
+
   if [ -n "$WINDOW_MATCH" ]; then
-    osascript - "$WINDOW_MATCH" "$MESSAGE_ESCAPED" <<'EOF'
+    if [ "$USE_CLIPBOARD" = true ]; then
+      osascript - "$WINDOW_MATCH" "$MESSAGE" <<'EOF'
+on run argv
+    set matchStr to item 1 of argv
+    set msg to item 2 of argv
+    tell application "Terminal"
+        repeat with w in windows
+            try
+                set wName to name of w
+                if wName contains matchStr and wName contains "Claude Code" then
+                    if miniaturized of w then
+                        set miniaturized of w to false
+                        delay 0.5
+                    end if
+                    set frontmost of w to true
+                    activate
+                    delay 0.5
+                    -- Save current clipboard, paste message, restore clipboard
+                    set oldClip to the clipboard
+                    set the clipboard to msg
+                    tell application "System Events"
+                        tell process "Terminal"
+                            keystroke "v" using command down
+                            delay 0.2
+                            keystroke return
+                        end tell
+                    end tell
+                    delay 0.1
+                    set the clipboard to oldClip
+                    return
+                end if
+            end try
+        end repeat
+    end tell
+end run
+EOF
+    else
+      osascript - "$WINDOW_MATCH" "$MESSAGE_ESCAPED" <<'EOF'
 on run argv
     set matchStr to item 1 of argv
     set msg to item 2 of argv
@@ -53,8 +97,45 @@ on run argv
     end tell
 end run
 EOF
+    fi
   else
-    osascript - "$MESSAGE_ESCAPED" <<'EOF'
+    if [ "$USE_CLIPBOARD" = true ]; then
+      osascript - "$MESSAGE" <<'EOF'
+on run argv
+    set msg to item 1 of argv
+    tell application "Terminal"
+        repeat with w in windows
+            try
+                set wName to name of w
+                if wName contains "Claude Code" then
+                    if miniaturized of w then
+                        set miniaturized of w to false
+                        delay 0.5
+                    end if
+                    set frontmost of w to true
+                    activate
+                    delay 0.5
+                    -- Save current clipboard, paste message, restore clipboard
+                    set oldClip to the clipboard
+                    set the clipboard to msg
+                    tell application "System Events"
+                        tell process "Terminal"
+                            keystroke "v" using command down
+                            delay 0.2
+                            keystroke return
+                        end tell
+                    end tell
+                    delay 0.1
+                    set the clipboard to oldClip
+                    return
+                end if
+            end try
+        end repeat
+    end tell
+end run
+EOF
+    else
+      osascript - "$MESSAGE_ESCAPED" <<'EOF'
 on run argv
     set msg to item 1 of argv
     tell application "Terminal"
@@ -82,6 +163,7 @@ on run argv
     end tell
 end run
 EOF
+    fi
   fi
 
 elif [ "$OS_TYPE" = "Linux" ]; then

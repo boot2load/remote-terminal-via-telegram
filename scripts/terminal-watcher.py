@@ -8,7 +8,7 @@ as self-editing messages with clean conversation formatting.
 Reads config from config.json for project name, window matching, and Telegram credentials.
 """
 
-import json, os, platform, re, subprocess, sys, time, urllib.request, urllib.parse
+import json, os, platform, re, subprocess, sys, tempfile, time, urllib.request, urllib.parse
 
 RTVT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACTIVE_FLAG = os.path.join(RTVT_DIR, ".active")
@@ -73,6 +73,9 @@ PROJECT_NAME = config.get("project", {}).get("name", "Terminal")
 WINDOW_MATCH = config.get("project", {}).get("window_match_string", "")
 TMUX_SESSION = config.get("project", {}).get("tmux_session", "")
 MAX_MSG_LEN = 3900
+TELEGRAM_MAX_LEN = 4096
+IDLE_TIMEOUT = config.get("idle_timeout_seconds", 300)
+HEARTBEAT_FILE = os.path.join(RTVT_DIR, ".last_heartbeat")
 
 with open(PID_FILE, "w") as f:
     f.write(str(os.getpid()))
@@ -583,8 +586,70 @@ def telegram_api(method, params):
         return {"ok": False}
 
 
+def send_document(filename, content, caption=""):
+    """Send content as a .txt file attachment via Telegram's sendDocument API."""
+    tmp = None
+    try:
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=f"_{filename}", delete=False)
+        tmp.write(content)
+        tmp.close()
+
+        boundary = "----TelegramBotBoundary"
+        body_parts = []
+        # chat_id field
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{CHAT_ID}")
+        # caption field
+        if caption:
+            body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}")
+        # disable_notification field
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"disable_notification\"\r\n\r\ntrue")
+        # document file field
+        with open(tmp.name, "rb") as f:
+            file_data = f.read()
+        body_parts.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: text/plain\r\n\r\n"
+        )
+        # Build multipart body as bytes
+        body_bytes = b""
+        for part in body_parts[:-1]:
+            body_bytes += part.encode() + b"\r\n"
+        # Last part has file data
+        body_bytes += body_parts[-1].encode()
+        body_bytes += file_data
+        body_bytes += f"\r\n--{boundary}--\r\n".encode()
+
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument",
+            data=body_bytes,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        )
+        resp = urllib.request.urlopen(req, timeout=30)
+        return json.loads(resp.read().decode()).get("ok", False)
+    except Exception:
+        return False
+    finally:
+        if tmp and os.path.exists(tmp.name):
+            os.unlink(tmp.name)
+
+
 def send_message(text, notify=False):
     text = redact_secrets(text)
+    # If text exceeds Telegram's 4096 char limit, send summary + file attachment
+    if len(text) > TELEGRAM_MAX_LEN:
+        summary = text[:3800] + "\n\n... (truncated) full output attached"
+        silent = "false" if notify else "true"
+        resp = telegram_api("sendMessage", {
+            "chat_id": CHAT_ID, "text": summary,
+            "parse_mode": "Markdown", "disable_notification": silent,
+        })
+        if not resp.get("ok"):
+            resp = telegram_api("sendMessage", {
+                "chat_id": CHAT_ID, "text": summary, "disable_notification": silent,
+            })
+        msg_id = resp.get("result", {}).get("message_id") if resp.get("ok") else None
+        send_document("full_output.txt", text, caption="Full output attached")
+        return msg_id
     silent = "false" if notify else "true"
     resp = telegram_api("sendMessage", {
         "chat_id": CHAT_ID, "text": text,
@@ -612,32 +677,73 @@ def edit_message(message_id, text):
     return resp.get("ok", False)
 
 
+def pin_message(message_id):
+    """Pin a message in the Telegram chat."""
+    return telegram_api("pinChatMessage", {
+        "chat_id": CHAT_ID,
+        "message_id": message_id,
+        "disable_notification": "true",
+    })
+
+
+def unpin_message(message_id):
+    """Unpin a specific message in the Telegram chat."""
+    return telegram_api("unpinChatMessage", {
+        "chat_id": CHAT_ID,
+        "message_id": message_id,
+    })
+
+
+# Track pinned error messages for auto-unpin after 5 minutes
+_pinned_messages = []  # list of (message_id, pin_time)
+
+
+def check_unpin_expired():
+    """Unpin messages that were pinned more than 5 minutes ago."""
+    now = time.time()
+    still_pinned = []
+    for msg_id, pin_time in _pinned_messages:
+        if now - pin_time >= 300:
+            unpin_message(msg_id)
+        else:
+            still_pinned.append((msg_id, pin_time))
+    _pinned_messages.clear()
+    _pinned_messages.extend(still_pinned)
+
+
+# Extended error patterns for detection
+ERROR_KEYWORDS = [
+    "error:", "failed", "crash", "exception", "fatal",
+    "permission denied", "not found", "timed out",
+    "enoent", "eacces", "etimedout", "oom", "killed",
+    "segfault", "syntax error", "typeerror", "referenceerror",
+    "importerror", "modulenotfounderror",
+]
+
+
 def detect_notification(turns):
     """Detect if the current terminal state warrants a phone notification.
-    Returns (should_notify: bool, summary: str).
+    Returns (should_notify: bool, summary: str, is_error: bool).
     The summary is a short string shown as the first line for phone notifications."""
     if not turns:
-        return False, ""
+        return False, "", False
 
     last = turns[-1]
 
-    # Approval prompt → always notify
+    # Approval prompt -> always notify
     if last.get("type") == "approval":
-        return True, ""  # approval_block handles its own format
+        return True, "", False  # approval_block handles its own format
 
     # Check for completion / error signals in Claude's output
     for turn in reversed(turns[-5:]):
         if turn.get("type") == "claude":
             text = turn.get("text", "")
             text_lower = text.lower()
-            # Error / failure (check first — higher priority)
-            if any(w in text_lower for w in [
-                "error:", "failed", "crash", "exception", "fatal",
-                "permission denied", "not found", "timed out",
-            ]):
+            # Error / failure (check first -- higher priority)
+            if any(w in text_lower for w in ERROR_KEYWORDS):
                 # Extract first meaningful line as summary
                 first_line = text.split("\n")[0][:80].strip()
-                return True, f"❌ {first_line}"
+                return True, f"❌ {first_line}", True
             # Task / build completed
             if any(w in text_lower for w in [
                 "done", "complete", "finished", "all tests pass",
@@ -645,13 +751,13 @@ def detect_notification(turns):
                 "created successfully", "no errors",
             ]):
                 first_line = text.split("\n")[0][:80].strip()
-                return True, f"✅ {first_line}"
+                return True, f"✅ {first_line}", False
         if turn.get("type") == "status":
             text = turn.get("text", "").lower()
             if "complete" in text or "done" in text or "finished" in text:
-                return True, "✅ Task complete"
+                return True, "✅ Task complete", False
 
-    return False, ""
+    return False, "", False
 
 
 def extract_approval_block(raw):
@@ -790,13 +896,38 @@ def main():
     last_user_count = 0
     prev_had_approval = False
 
+    # Heartbeat and idle tracking
+    iteration_count = 0
+    last_change_time = time.time()
+    idle_notified = False
+
     while os.path.exists(ACTIVE_FLAG):
         time.sleep(3)
+        iteration_count += 1
+
+        # Write heartbeat every 60 seconds (20 iterations at 3s interval)
+        if iteration_count % 20 == 0:
+            try:
+                with open(HEARTBEAT_FILE, "w") as hf:
+                    hf.write(str(int(time.time())))
+            except OSError:
+                pass
+
+        # Check for expired pinned messages
+        check_unpin_expired()
 
         curr_content = get_terminal_content()
         if not curr_content or curr_content == prev_content:
+            # Check idle timeout
+            if not idle_notified and (time.time() - last_change_time) >= IDLE_TIMEOUT:
+                idle_minutes = int((time.time() - last_change_time) / 60)
+                send_message(f"💤 Terminal idle for {idle_minutes} minutes")
+                idle_notified = True
             continue
 
+        # Content changed — reset idle tracking
+        last_change_time = time.time()
+        idle_notified = False
         prev_content = curr_content
 
         has_approval = "Do you want to" in curr_content
@@ -868,7 +999,7 @@ def main():
             continue
 
         # Detect if this update warrants a phone notification
-        should_notify, notify_summary = detect_notification(visible)
+        should_notify, notify_summary, is_error = detect_notification(visible)
 
         # Prepend short summary for phone notification preview
         if should_notify and notify_summary:
@@ -892,6 +1023,10 @@ def main():
                     live_msg_id = send_message(display, notify=True)
                     if live_msg_id:
                         live_msg_text = display
+                        # Pin error messages for visibility
+                        if is_error:
+                            pin_message(live_msg_id)
+                            _pinned_messages.append((live_msg_id, time.time()))
                 elif edit_message(live_msg_id, display):
                     live_msg_text = display
                 else:
@@ -902,10 +1037,20 @@ def main():
             live_msg_id = send_message(display, notify=should_notify)
             if live_msg_id:
                 live_msg_text = display
+                # Pin error messages for visibility
+                if is_error:
+                    pin_message(live_msg_id)
+                    _pinned_messages.append((live_msg_id, time.time()))
 
     if live_msg_id:
         final = live_msg_text.replace(header, header_ended)
         edit_message(live_msg_id, final)
+
+    # Clean up heartbeat file
+    try:
+        os.remove(HEARTBEAT_FILE)
+    except OSError:
+        pass
 
     try:
         os.remove(PID_FILE)

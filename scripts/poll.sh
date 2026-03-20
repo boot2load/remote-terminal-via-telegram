@@ -15,38 +15,24 @@ LOG_FILE="$RTVT_DIR/daemon.log"
 MAX_MSG_PER_CYCLE=5
 MAX_MSG_LENGTH=500
 
-# Ensure only one instance
-LOCK_DIR="$RTVT_DIR/.poll.lock"
-LOCK_FILE="$RTVT_DIR/.poll.flock"
-OS_LOCK="$(uname -s)"
-
-if [ "$OS_LOCK" = "Linux" ] && command -v flock >/dev/null 2>&1; then
-  # Linux: use flock for atomic locking (no TOCTOU race)
-  exec 9>"$LOCK_FILE"
-  if ! flock -n 9; then
-    echo "Poller already running, exiting" >> "$LOG_FILE"
-    exit 0
-  fi
-  # Lock acquired — fd 9 stays open until process exits
-else
-  # macOS / fallback: lock directory (atomic mkdir)
-  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    if [ -f "$PID_FILE" ]; then
-      OLD_PID=$(cat "$PID_FILE")
-      if kill -0 "$OLD_PID" 2>/dev/null; then
-        echo "Poller already running (PID $OLD_PID), exiting" >> "$LOG_FILE"
-        exit 0
-      fi
+# Ensure only one instance using flock (cross-platform, race-condition free)
+LOCK_FILE="$RTVT_DIR/.poll.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9 2>/dev/null; then
+  # flock not available or lock held — fallback to PID check
+  if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE")
+    if [[ "$OLD_PID" =~ ^[0-9]+$ ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+      echo "Poller already running (PID $OLD_PID), exiting" >> "$LOG_FILE"
+      exit 0
     fi
-    rm -rf "$LOCK_DIR"
-    mkdir "$LOCK_DIR" 2>/dev/null || exit 1
   fi
 fi
 
 echo $$ > "$PID_FILE"
 chmod 600 "$PID_FILE" 2>/dev/null || true
 cleanup_poll() {
-  [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK_DIR" "$PID_FILE" "$LOCK_FILE"
+  [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ] && rm -f "$PID_FILE" "$LOCK_FILE"
   rm -f "$_TG_URL_FILE" 2>/dev/null || true
 }
 trap cleanup_poll EXIT
