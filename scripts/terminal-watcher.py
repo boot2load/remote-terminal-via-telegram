@@ -920,9 +920,90 @@ def extract_approval_block(raw):
     return msg
 
 
+def detect_task_state(turns):
+    """Detect the current task state from parsed turns.
+    Returns: (state, active_tool, detail)
+    States: 'working', 'tool', 'approval', 'complete', 'error', 'idle'
+    """
+    if not turns:
+        return "idle", None, None
+
+    last = turns[-1]
+
+    # Approval prompt
+    if last.get("type") == "approval":
+        return "approval", None, None
+
+    # Check last few turns for state
+    for turn in reversed(turns[-5:]):
+        if turn.get("type") == "tool":
+            output = turn.get("output", [])
+            if not output or output == []:
+                return "tool", turn.get("name", ""), turn.get("arg", "")
+            # Tool with output = probably done with that tool
+            continue
+        if turn.get("type") == "claude":
+            text = turn.get("text", "").lower()
+            # Error detection
+            if any(w in text for w in ["error:", "failed", "crash", "exception", "fatal"]):
+                return "error", None, turn.get("text", "").split("\n")[0][:60]
+            # Completion detection
+            if any(w in text for w in ["done", "complete", "finished", "all tests pass", "committed", "pushed"]):
+                return "complete", None, turn.get("text", "").split("\n")[0][:60]
+        if turn.get("type") == "status":
+            return "working", None, turn.get("text", "")[:60]
+
+    # Default: working
+    return "working", None, None
+
+
+def format_status_footer(state, active_tool, detail, elapsed_secs, tick):
+    """Generate the status footer line for a message."""
+    hourglass = "⏳" if tick % 2 == 0 else "⌛"
+    elapsed = format_elapsed(elapsed_secs)
+
+    if state == "approval":
+        return f"🟡 Awaiting approval ({elapsed})"
+    elif state == "tool":
+        tool_name = active_tool or "tool"
+        tool_arg = f": {detail}" if detail else ""
+        return f"⚡ Running {tool_name}{tool_arg} ({elapsed})"
+    elif state == "complete":
+        return f"✅ Done in {elapsed}"
+    elif state == "error":
+        return f"❌ Error after {elapsed}"
+    elif state == "idle":
+        return f"💤 Idle ({elapsed})"
+    else:
+        return f"{hourglass} Working... ({elapsed})"
+
+
+def format_elapsed(secs):
+    """Format seconds into human-readable elapsed time."""
+    secs = int(secs)
+    if secs < 60:
+        return f"{secs}s"
+    elif secs < 3600:
+        return f"{secs // 60}m {secs % 60}s"
+    else:
+        return f"{secs // 3600}h {(secs % 3600) // 60}m"
+
+
+def get_header_for_state(state):
+    """Return the header emoji suffix for a given task state."""
+    state_icons = {
+        "working": "⏳",
+        "tool": "⚡",
+        "approval": "🟡",
+        "complete": "✅",
+        "error": "❌",
+        "idle": "💤",
+    }
+    return state_icons.get(state, "⏳")
+
+
 def main():
-    header = f"🖥 {PROJECT_NAME} Terminal"
-    header_done = f"🖥 {PROJECT_NAME} Terminal ✓"
+    header_base = f"🖥 {PROJECT_NAME} Terminal"
     header_ended = f"🖥 {PROJECT_NAME} Terminal (ended)"
 
     prev_content = get_terminal_content()
@@ -930,6 +1011,8 @@ def main():
     live_msg_text = ""
     last_user_count = 0
     prev_had_approval = False
+    task_start_time = time.time()
+    tick_count = 0
 
     # Heartbeat and idle tracking
     iteration_count = 0
@@ -974,12 +1057,16 @@ def main():
                 edit_message(live_msg_id, final)
                 live_msg_id = None
                 live_msg_text = ""
+            task_start_time = time.time()  # Reset timer after approval
             processed = preprocess_tables(curr_content)
             turns = parse_terminal(processed)
             if turns:
                 formatted = format_turns(turns)
                 if formatted:
-                    display = f"{header}\n\n{formatted}"
+                    state, tool, detail = detect_task_state(turns)
+                    header = f"{header_base} {get_header_for_state(state)}"
+                    footer = format_status_footer(state, tool, detail, time.time() - task_start_time, tick_count)
+                    display = f"{header}\n\n{formatted}\n\n{footer}"
                     if len(display) > MAX_MSG_LEN:
                         display = display[:MAX_MSG_LEN]
                     live_msg_id = send_message(display)
@@ -990,7 +1077,12 @@ def main():
 
         if approval_block and not prev_had_approval:
             if live_msg_id:
-                final = live_msg_text.replace(header, header_done)
+                state, _, _ = detect_task_state(parse_terminal(preprocess_tables(prev_content)))
+                header_with_state = f"{header_base} {get_header_for_state('complete')}"
+                final = live_msg_text
+                # Replace any header variant with the completed one
+                for icon in ["⏳", "⌛", "⚡", "🟡", "❌", "💤"]:
+                    final = final.replace(f"{header_base} {icon}", header_with_state)
                 edit_message(live_msg_id, final)
                 live_msg_id = None
                 live_msg_text = ""
@@ -1014,12 +1106,22 @@ def main():
         if not turns:
             continue
 
+        tick_count += 1
+
         user_count = sum(1 for t in turns if t["type"] == "user")
         if user_count > last_user_count and live_msg_id:
-            final = live_msg_text.replace(header, header_done)
+            # New user message — finalize previous message with ✅
+            header_complete = f"{header_base} ✅"
+            final = live_msg_text
+            for icon in ["⏳", "⌛", "⚡", "🟡", "❌", "💤"]:
+                final = final.replace(f"{header_base} {icon}", header_complete)
+            # Update footer to "Done"
+            elapsed = time.time() - task_start_time
+            final = re.sub(r'\n\n[⏳⌛⚡🟡✅❌💤].*$', f"\n\n✅ Done in {format_elapsed(elapsed)}", final)
             edit_message(live_msg_id, final)
             live_msg_id = None
             live_msg_text = ""
+            task_start_time = time.time()  # Reset timer for new task
         last_user_count = user_count
 
         last_user_idx = -1
@@ -1033,14 +1135,20 @@ def main():
         if not formatted:
             continue
 
+        # Detect task state and build status footer
+        state, active_tool, detail = detect_task_state(visible)
+        elapsed_secs = time.time() - task_start_time
+        header = f"{header_base} {get_header_for_state(state)}"
+        footer = format_status_footer(state, active_tool, detail, elapsed_secs, tick_count)
+
         # Detect if this update warrants a phone notification
         should_notify, notify_summary, is_error = detect_notification(visible)
 
         # Prepend short summary for phone notification preview
         if should_notify and notify_summary:
-            display = f"{notify_summary}\n\n{header}\n\n{formatted}"
+            display = f"{notify_summary}\n\n{header}\n\n{formatted}\n\n{footer}"
         else:
-            display = f"{header}\n\n{formatted}"
+            display = f"{header}\n\n{formatted}\n\n{footer}"
         while len(display) > MAX_MSG_LEN:
             lines = display.split("\n")
             if len(lines) > 5:
@@ -1078,7 +1186,12 @@ def main():
                     _pinned_messages.append((live_msg_id, time.time()))
 
     if live_msg_id:
-        final = live_msg_text.replace(header, header_ended)
+        final = live_msg_text
+        for icon in ["⏳", "⌛", "⚡", "🟡", "✅", "❌", "💤"]:
+            final = final.replace(f"{header_base} {icon}", header_ended)
+        # Replace footer with ended status
+        elapsed = time.time() - task_start_time
+        final = re.sub(r'\n\n[⏳⌛⚡🟡✅❌💤].*$', f"\n\n🔴 Session ended ({format_elapsed(elapsed)})", final)
         edit_message(live_msg_id, final)
 
     # Clean up heartbeat file
