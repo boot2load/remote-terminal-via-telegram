@@ -1164,8 +1164,14 @@ def main():
                 display = display[-MAX_MSG_LEN:]
                 break
 
+        # Compare content WITHOUT the timer footer to avoid unnecessary updates
+        def strip_footer(text):
+            return re.sub(r'\n\n[⏳⌛⚡🟡✅❌💤].*$', '', text)
+
+        content_changed = strip_footer(display) != strip_footer(live_msg_text)
+
         if live_msg_id:
-            if display != live_msg_text:
+            if content_changed or should_notify:
                 if should_notify:
                     # Important update: send as new message with notification
                     header_complete = f"{header_base} ✅"
@@ -1182,10 +1188,7 @@ def main():
                             _pinned_messages.append((live_msg_id, time.time()))
                 elif edit_message(live_msg_id, display):
                     live_msg_text = display
-                else:
-                    live_msg_id = send_message(display)
-                    if live_msg_id:
-                        live_msg_text = display
+                # If edit fails, DON'T send a new message — just wait for next cycle
         else:
             live_msg_id = send_message(display, notify=should_notify)
             if live_msg_id:
