@@ -1161,7 +1161,10 @@ def main():
             if display != live_msg_text:
                 if should_notify:
                     # Important update: send as new message with notification
-                    final = live_msg_text.replace(header, header_done)
+                    header_complete = f"{header_base} ✅"
+                    final = live_msg_text
+                    for icon in ["⏳", "⌛", "⚡", "🟡", "❌", "💤"]:
+                        final = final.replace(f"{header_base} {icon}", header_complete)
                     edit_message(live_msg_id, final)
                     live_msg_id = send_message(display, notify=True)
                     if live_msg_id:
