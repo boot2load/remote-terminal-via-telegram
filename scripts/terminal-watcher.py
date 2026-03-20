@@ -187,6 +187,7 @@ def redact_secrets(text):
 SEP_RE = re.compile(r'^[─━═╌┈┄\-]{10,}$')
 TABLE_BORDER_RE = re.compile(r'^[┌┬┐├┼┤└┴┘─│╌┈]+$')
 TABLE_ROW_RE = re.compile(r'^\s*│(.+)│\s*$')
+TRUNCATED_RE = re.compile(r'[…⋯]\s*\+?\s*(\d+)\s*lines?\s*\(ctrl\+o', re.IGNORECASE)
 
 
 def get_terminal_content():
@@ -456,6 +457,7 @@ def format_turns(turns):
     parts = []
     in_claude_block = False
     claude_lines = []
+    has_truncated_output = False  # Track if any output was truncated by Claude Code
 
     def flush_claude():
         nonlocal in_claude_block, claude_lines
@@ -477,6 +479,15 @@ def format_turns(turns):
             in_claude_block = True
             output_lines = turn.get("output", [])
             output = "\n".join(output_lines)
+            # Check if Claude Code truncated the output ("+N lines (ctrl+o to expand)")
+            truncated_match = None
+            for ol in output_lines:
+                m = TRUNCATED_RE.search(ol)
+                if m:
+                    truncated_match = m
+                    has_truncated_output = True
+                    break
+
             if output:
                 if len(output) > 400:
                     output = output[:400] + "\n  … (truncated)"
@@ -501,7 +512,12 @@ def format_turns(turns):
                         if l.strip().startswith("Added ") or l.strip().startswith("Removed "):
                             diff_lines.append(f"# {l.strip()}")
                             continue
-                        if "lines (ctrl+o" in l or l.strip().startswith("…"):
+                        if "lines (ctrl+o" in l or TRUNCATED_RE.search(l):
+                            hidden = TRUNCATED_RE.search(l)
+                            n = hidden.group(1) if hidden else "?"
+                            diff_lines.append(f"# ⚠️ {n} more lines hidden in terminal — full code not available via Copy")
+                            continue
+                        if l.strip().startswith("…") and "lines" not in l:
                             diff_lines.append(f"# {l.strip()}")
                             continue
                         m = re.match(r'^(\d+)\s+(.*)', l)
@@ -525,7 +541,11 @@ def format_turns(turns):
                         elif ol.strip().startswith("===") or ol.strip() in ("PASS", "FAIL") or ol.strip().startswith("Response:") or ol.strip().startswith("Error:") or ol.strip().startswith("Results:") or ol.strip().startswith("{") or ol.strip().startswith("["):
                             found_output = True
                             actual_output.append(ol)
-                        elif "lines (ctrl+o" in ol or ol.strip().startswith("…"):
+                        elif "lines (ctrl+o" in ol or TRUNCATED_RE.search(ol):
+                            hidden = TRUNCATED_RE.search(ol)
+                            n = hidden.group(1) if hidden else "?"
+                            actual_output.append(f"⚠️ {n} more lines hidden in terminal")
+                        elif ol.strip().startswith("…") and "lines" not in ol:
                             actual_output.append(ol)
                         else:
                             cmd_echo.append(ol)
@@ -570,6 +590,11 @@ def format_turns(turns):
             status_text = re.sub(r'^[✻✶]', '🪸', turn["text"])
             claude_lines.append(f"  {status_text}")
     flush_claude()
+
+    # If truncated output detected, add a note at the end
+    if has_truncated_output:
+        parts.append("⚠️ Some output was collapsed by Claude Code terminal. The hidden lines are not available for Copy. Use ctrl+o in the terminal to expand, or ask Claude to save the full output to a file.")
+
     return "\n\n".join(parts)
 
 
