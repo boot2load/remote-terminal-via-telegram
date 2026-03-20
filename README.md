@@ -127,25 +127,33 @@ To target a specific project, set `window_match_string` to a unique string in th
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐         ┌──────────────────┐
-│  Terminal.app    │         │ Telegram Bot API  │
-│  (Claude Code)   │         │                  │
-└────────┬────────┘         └────────┬─────────┘
-         │                           │
-    ┌────┴──────┐              ┌────┴──────┐
-    │ terminal  │  AppleScript │  poll.sh  │ HTTP polling
-    │ watcher   │  reads       │           │ reads messages
-    │ .py       │  content     │           │
-    │           │─────────────►│           │
-    │           │ sends to TG  │           │────────────►
-    └───────────┘              │           │ types into terminal
-                               └─────┬─────┘
-                                     │
-                               ┌─────┴─────┐
-                               │ watchdog  │ monitors both
-                               │ .sh       │ auto-restarts
-                               └───────────┘
+                    Claude Code Telegram Agent
+
+  YOUR TERMINAL                              YOUR PHONE
+  ============                               ==========
+
+  Terminal.app ◄──── AppleScript ────► terminal-watcher.py
+  (Claude Code)      reads screen          │
+       ▲             injects keys          │ sends formatted
+       │                                   │ output via API
+       │                                   ▼
+  type-to-terminal.sh              Telegram Bot API
+       ▲                                   │
+       │                                   │ delivers to
+       │                                   ▼
+  poll.sh ◄──── HTTP polling ────► Telegram Chat 📱
+       │         every 1-3s          (buttons, voice,
+       │                              text input)
+       │
+  watchdog.sh
+  (monitors poll.sh + watcher,
+   auto-restarts on crash)
 ```
+
+**Data Flow:**
+- **Terminal → Phone:** `terminal-watcher.py` reads screen via AppleScript/tmux → formats output → sends to Telegram
+- **Phone → Terminal:** `poll.sh` checks Telegram for messages → `type-to-terminal.sh` injects keystrokes
+- **Reliability:** `watchdog.sh` monitors both daemons, auto-restarts if either crashes
 
 ## 📁 Files
 
