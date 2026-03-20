@@ -304,6 +304,8 @@ def parse_terminal(raw):
         "Esc to cancel", "ctrl+", "Tab to amend",
         "This command requires approval", "Command contains",
         "accept edits", "PR #",
+        "⏵", "shift+tab to cycle", "esc to interrupt",
+        "auto-approve", "· esc",
     )
     has_markers = any("⏺" in l for l in lines)
     is_modal = not has_markers and any("Do you want to" in l for l in lines)
@@ -587,8 +589,16 @@ def format_turns(turns):
             claude_lines.append(f"  🟡 Approve?\n  {opts}")
         elif t == "status":
             in_claude_block = True
-            status_text = re.sub(r'^[✻✶]', '🪸', turn["text"])
-            claude_lines.append(f"  {status_text}")
+            status_text = turn["text"]
+            # Clean up terminal UI symbols with better-looking ones
+            status_text = re.sub(r'^[✻✶]', '🔮', status_text)
+            status_text = re.sub(r'[✢]', '✨', status_text)
+            status_text = re.sub(r'⏵+', '▶', status_text)
+            # Remove terminal-only hints
+            status_text = re.sub(r'\s*·\s*esc\b.*$', '', status_text, flags=re.IGNORECASE)
+            status_text = re.sub(r'\s*shift\+tab.*$', '', status_text, flags=re.IGNORECASE)
+            status_text = re.sub(r'\s*\(shift\+tab.*?\)', '', status_text)
+            claude_lines.append(f"  {status_text.strip()}")
     flush_claude()
 
     # If truncated output detected, add a note at the end
