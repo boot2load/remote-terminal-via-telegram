@@ -774,8 +774,15 @@ def detect_notification(turns):
         if turn.get("type") == "claude":
             text = turn.get("text", "")
             text_lower = text.lower()
+            # Skip error detection in commit messages, descriptions, and fix notes
+            is_descriptive = any(phrase in text_lower for phrase in [
+                "fix ", "fixed ", "fixing ", "commit", "pushed",
+                "refactor", "renamed", "replaced", "updated",
+                "co-authored", "the issue was", "the error was",
+                "let me fix", "i found the", "resolved",
+            ])
             # Error / failure (check first -- higher priority)
-            if any(w in text_lower for w in ERROR_KEYWORDS):
+            if not is_descriptive and any(w in text_lower for w in ERROR_KEYWORDS):
                 # Extract first meaningful line as summary
                 first_line = text.split("\n")[0][:80].strip()
                 return True, f"❌ {first_line}", True
