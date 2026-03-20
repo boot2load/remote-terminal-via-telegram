@@ -517,7 +517,7 @@ def format_turns(turns):
                         if "lines (ctrl+o" in l or TRUNCATED_RE.search(l):
                             hidden = TRUNCATED_RE.search(l)
                             n = hidden.group(1) if hidden else "?"
-                            diff_lines.append(f"# ⚠️ {n} more lines hidden in terminal — full code not available via Copy")
+                            diff_lines.append(f"# ⚠️ {n} more lines collapsed")
                             continue
                         if l.strip().startswith("…") and "lines" not in l:
                             diff_lines.append(f"# {l.strip()}")
@@ -546,7 +546,7 @@ def format_turns(turns):
                         elif "lines (ctrl+o" in ol or TRUNCATED_RE.search(ol):
                             hidden = TRUNCATED_RE.search(ol)
                             n = hidden.group(1) if hidden else "?"
-                            actual_output.append(f"⚠️ {n} more lines hidden in terminal")
+                            actual_output.append(f"⚠️ {n} more lines collapsed")
                         elif ol.strip().startswith("…") and "lines" not in ol:
                             actual_output.append(ol)
                         else:
@@ -603,7 +603,7 @@ def format_turns(turns):
 
     # If truncated output detected, add a note at the end
     if has_truncated_output:
-        parts.append("⚠️ Some output was collapsed by Claude Code terminal. The hidden lines are not available for Copy. Use ctrl+o in the terminal to expand, or ask Claude to save the full output to a file.")
+        pass  # Don't add verbose truncation warning — the inline note is enough
 
     return "\n\n".join(parts)
 
