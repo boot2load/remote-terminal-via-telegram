@@ -214,9 +214,9 @@ button_map = {
     '📋 Status': 'what is the current status of the work?',
     '🔄 Continue': 'please continue with the next task',
     '↩️ Undo last change': 'please undo the last change you made',
-    '⏹ /terminal-control-end': '/terminal-control-end',
+    '⏹ /terminal-control-end': '__STOP__',
     '⬜ Not connected to terminal': '__IGNORE__',
-    '▶️ /terminal-control-start': '__IGNORE__',
+    '▶️ /terminal-control-start': '__START__',
 }
 
 for update in results:
@@ -302,6 +302,16 @@ for m in messages:
         send_escape
       elif [ "$MSG" = "__IGNORE__" ]; then
         continue
+      elif [ "$MSG" = "__STOP__" ]; then
+        log "Stop requested via Telegram"
+        "$SCRIPT_DIR/stop.sh" 2>/dev/null &
+        exit 0
+      elif [ "$MSG" = "__START__" ]; then
+        log "Start requested via Telegram"
+        "$SCRIPT_DIR/stop.sh" 2>/dev/null
+        sleep 1
+        "$SCRIPT_DIR/start.sh" 2>/dev/null &
+        exit 0
       elif [ -f "$RTVT_DIR/.pending_voice.txt" ] && { [ "$MSG" = "1" ] || [ "$MSG" = "3" ]; }; then
         VOICE_AGE=$(( $(date +%s) - $(file_mtime "$RTVT_DIR/.pending_voice.txt") ))
         if [ "$VOICE_AGE" -gt 60 ]; then
