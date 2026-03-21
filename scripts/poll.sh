@@ -402,7 +402,13 @@ Press ❌ 3. No to cancel" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=📎 File saved: ${FILE_NAME}" \
             -d disable_notification=true > /dev/null 2>&1
-          INSTRUCTION="Please read this file: ${LOCAL_PATH}"
+          # Detect image files so Claude Code reads them visually
+          FILE_EXT=$(echo "$FILE_NAME" | tr '[:upper:]' '[:lower:]' | grep -oE '\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico|heic|heif)$' || echo "")
+          if [ -n "$FILE_EXT" ]; then
+            INSTRUCTION="Please look at this image: ${LOCAL_PATH}"
+          else
+            INSTRUCTION="Please read this file: ${LOCAL_PATH}"
+          fi
           [ -n "$CAPTION" ] && INSTRUCTION="$INSTRUCTION — ${CAPTION}"
           "$SCRIPT_DIR/type-to-terminal.sh" "$INSTRUCTION" 2>/dev/null || true
         else
@@ -454,10 +460,16 @@ Press ❌ 3. No to cancel" \
     done
 
     # Write to inbox as backup (errors must not crash the daemon)
+    # Skip internal tags — photos, files, voice are already handled above
     echo "$RESULT" | tail -n +2 | while IFS= read -r MSG; do
       [ -z "$MSG" ] && continue
       [ "$MSG" = "__ESCAPE__" ] && continue
       [ "$MSG" = "__IGNORE__" ] && continue
+      [[ "$MSG" == __PHOTO__* ]] && continue
+      [[ "$MSG" == __FILE__* ]] && continue
+      [[ "$MSG" == __VOICE__* ]] && continue
+      [[ "$MSG" == __STOP__* ]] && continue
+      [[ "$MSG" == __START__* ]] && continue
       mkdir -p "$RTVT_DIR/inbox"
       INBOX_FILE=$(mktemp "$RTVT_DIR/inbox/msg_XXXXXXXXXX.txt" 2>/dev/null) || continue
       chmod 600 "$INBOX_FILE"
