@@ -94,8 +94,25 @@ fi
 send_escape() {
   if [ "$OS_TYPE" = "Darwin" ]; then
     # macOS: AppleScript Escape key injection
+    # Shared focus logic: detect if Terminal is already frontmost to avoid
+    # the app-switch delay that can swallow the first keypress
+    _ESC_FOCUS='
+      tell application "System Events"
+          set frontApp to name of first application process whose frontmost is true
+      end tell
+      set alreadyFront to (frontApp is "Terminal")
+      if miniaturized of w then set miniaturized of w to false
+      set frontmost of w to true
+      activate
+      if not alreadyFront then
+          delay 1.2
+      else
+          delay 0.2
+      end if
+      set frontmost of w to true
+    '
     if [ -n "$WINDOW_MATCH" ]; then
-      osascript - "$WINDOW_MATCH" <<'ASEOF' 2>/dev/null || true
+      osascript - "$WINDOW_MATCH" <<ASEOF 2>/dev/null || true
 on run argv
     set matchStr to item 1 of argv
     tell application "Terminal"
@@ -103,10 +120,7 @@ on run argv
             try
                 set wName to name of w
                 if wName contains matchStr and wName contains "Claude Code" then
-                    if miniaturized of w then set miniaturized of w to false
-                    set frontmost of w to true
-                    activate
-                    delay 0.3
+                    ${_ESC_FOCUS}
                     tell application "System Events"
                         tell process "Terminal"
                             key code 53
@@ -120,15 +134,12 @@ on run argv
 end run
 ASEOF
     else
-      osascript <<'ASEOF' 2>/dev/null || true
+      osascript <<ASEOF 2>/dev/null || true
 tell application "Terminal"
     repeat with w in windows
         try
             if name of w contains "Claude Code" then
-                if miniaturized of w then set miniaturized of w to false
-                set frontmost of w to true
-                activate
-                delay 0.3
+                ${_ESC_FOCUS}
                 tell application "System Events"
                     tell process "Terminal"
                         key code 53

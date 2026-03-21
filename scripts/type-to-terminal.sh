@@ -30,9 +30,35 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     USE_CLIPBOARD=false
   fi
 
+  # Shared AppleScript handler for focus + keystroke injection.
+  # Detects whether Terminal is already frontmost to avoid the app-switch
+  # delay that swallows the first keystroke on macOS.
+  _FOCUS_PREAMBLE='
+    -- Check if Terminal is already the active app
+    tell application "System Events"
+        set frontApp to name of first application process whose frontmost is true
+    end tell
+    set alreadyFront to (frontApp is "Terminal")
+
+    if miniaturized of w then
+        set miniaturized of w to false
+    end if
+    set frontmost of w to true
+    activate
+    if not alreadyFront then
+        -- Longer delay when switching from another app so macOS
+        -- completes the transition before we send keystrokes
+        delay 1.2
+    else
+        delay 0.2
+    end if
+    -- Re-assert focus after delay (belt and suspenders)
+    set frontmost of w to true
+  '
+
   if [ -n "$WINDOW_MATCH" ]; then
     if [ "$USE_CLIPBOARD" = true ]; then
-      osascript - "$WINDOW_MATCH" "$MESSAGE" <<'EOF'
+      osascript - "$WINDOW_MATCH" "$MESSAGE" <<EOF
 on run argv
     set matchStr to item 1 of argv
     set msg to item 2 of argv
@@ -41,13 +67,7 @@ on run argv
             try
                 set wName to name of w
                 if wName contains matchStr and wName contains "Claude Code" then
-                    if miniaturized of w then
-                        set miniaturized of w to false
-                        delay 0.5
-                    end if
-                    set frontmost of w to true
-                    activate
-                    delay 0.5
+                    ${_FOCUS_PREAMBLE}
                     -- Save current clipboard, paste message, restore clipboard
                     set oldClip to the clipboard
                     set the clipboard to msg
@@ -68,7 +88,7 @@ on run argv
 end run
 EOF
     else
-      osascript - "$WINDOW_MATCH" "$MESSAGE_ESCAPED" <<'EOF'
+      osascript - "$WINDOW_MATCH" "$MESSAGE_ESCAPED" <<EOF
 on run argv
     set matchStr to item 1 of argv
     set msg to item 2 of argv
@@ -77,13 +97,7 @@ on run argv
             try
                 set wName to name of w
                 if wName contains matchStr and wName contains "Claude Code" then
-                    if miniaturized of w then
-                        set miniaturized of w to false
-                        delay 0.5
-                    end if
-                    set frontmost of w to true
-                    activate
-                    delay 0.5
+                    ${_FOCUS_PREAMBLE}
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke msg
@@ -100,7 +114,7 @@ EOF
     fi
   else
     if [ "$USE_CLIPBOARD" = true ]; then
-      osascript - "$MESSAGE" <<'EOF'
+      osascript - "$MESSAGE" <<EOF
 on run argv
     set msg to item 1 of argv
     tell application "Terminal"
@@ -108,13 +122,7 @@ on run argv
             try
                 set wName to name of w
                 if wName contains "Claude Code" then
-                    if miniaturized of w then
-                        set miniaturized of w to false
-                        delay 0.5
-                    end if
-                    set frontmost of w to true
-                    activate
-                    delay 0.5
+                    ${_FOCUS_PREAMBLE}
                     -- Save current clipboard, paste message, restore clipboard
                     set oldClip to the clipboard
                     set the clipboard to msg
@@ -135,7 +143,7 @@ on run argv
 end run
 EOF
     else
-      osascript - "$MESSAGE_ESCAPED" <<'EOF'
+      osascript - "$MESSAGE_ESCAPED" <<EOF
 on run argv
     set msg to item 1 of argv
     tell application "Terminal"
@@ -143,13 +151,7 @@ on run argv
             try
                 set wName to name of w
                 if wName contains "Claude Code" then
-                    if miniaturized of w then
-                        set miniaturized of w to false
-                        delay 0.5
-                    end if
-                    set frontmost of w to true
-                    activate
-                    delay 0.5
+                    ${_FOCUS_PREAMBLE}
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke msg
