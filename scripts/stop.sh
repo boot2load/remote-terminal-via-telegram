@@ -74,6 +74,7 @@ rm -f "$RTVT_DIR/.poll.lock" 2>/dev/null || true
 rm -f "$RTVT_DIR/.poll.flock" 2>/dev/null || true
 rm -f "$RTVT_DIR/.session_start" 2>/dev/null || true
 rm -f "$RTVT_DIR/.last_heartbeat" 2>/dev/null || true
+rm -f "$RTVT_DIR/.runtime.env" 2>/dev/null || true
 rm -f "$RTVT_DIR/inbox"/*.txt 2>/dev/null || true
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') Session stopped" >> "$LOG_FILE"

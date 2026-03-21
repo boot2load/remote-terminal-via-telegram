@@ -69,9 +69,28 @@ if not BOT_TOKEN or BOT_TOKEN in ("STORED_IN_KEYCHAIN", "STORED_IN_SECRET_TOOL")
     sys.exit(1)
 
 CHAT_ID = str(config["telegram"]["chat_id"])
-PROJECT_NAME = config.get("project", {}).get("name", "Terminal")
-WINDOW_MATCH = config.get("project", {}).get("window_match_string", "")
-TMUX_SESSION = config.get("project", {}).get("tmux_session", "")
+
+# Runtime overrides from .runtime.env take precedence over config.json.
+# This allows start.sh to auto-detect the calling terminal session.
+RUNTIME_ENV = os.path.join(RTVT_DIR, ".runtime.env")
+_runtime = {}
+if os.path.exists(RUNTIME_ENV):
+    with open(RUNTIME_ENV) as _rf:
+        for _line in _rf:
+            _line = _line.strip()
+            if not _line or _line.startswith("#"):
+                continue
+            if "=" in _line:
+                _k, _v = _line.split("=", 1)
+                _k = _k.strip()
+                # Remove shell quoting (single quotes from printf %q or $'...' syntax)
+                _v = _v.strip().strip("'").strip('"')
+                if _v:
+                    _runtime[_k] = _v
+
+PROJECT_NAME = _runtime.get("PROJECT_NAME") or config.get("project", {}).get("name", "Terminal")
+WINDOW_MATCH = _runtime.get("WINDOW_MATCH") or config.get("project", {}).get("window_match_string", "")
+TMUX_SESSION = _runtime.get("TMUX_SESSION") or config.get("project", {}).get("tmux_session", "")
 MAX_MSG_LEN = 3900
 TELEGRAM_MAX_LEN = 4096
 IDLE_TIMEOUT = config.get("idle_timeout_seconds", 300)

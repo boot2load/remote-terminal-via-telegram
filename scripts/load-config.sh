@@ -116,3 +116,19 @@ fi
 source "$_RTVT_CONFIG_TMP"
 unset _RTVT_CONFIG_FILE
 export RTVT_DIR
+
+# Apply runtime overrides from .runtime.env (written by start.sh)
+# These override the static config.json values with auto-detected session identity
+_RUNTIME_ENV="$RTVT_DIR/.runtime.env"
+if [ -f "$_RUNTIME_ENV" ]; then
+  while IFS='=' read -r key val; do
+    # Skip comments and empty lines
+    [[ "$key" =~ ^[[:space:]]*# ]] && continue
+    [ -z "$key" ] && continue
+    # Only override if the runtime value is non-empty
+    val=$(eval echo "$val" 2>/dev/null || echo "")
+    if [ -n "$val" ]; then
+      export "$key=$val"
+    fi
+  done < "$_RUNTIME_ENV"
+fi
