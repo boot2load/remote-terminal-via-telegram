@@ -779,11 +779,6 @@ def detect_notification(turns):
             ]):
                 first_line = text.split("\n")[0][:80].strip()
                 return True, f"✅ {first_line}", False
-            # If this is the last turn (Claude's final response), task is complete
-            # even without explicit keywords — Claude is waiting for user input
-            if turn is last:
-                first_line = text.split("\n")[0][:80].strip()
-                return True, f"✅ {first_line}", False
         if turn.get("type") == "status":
             text = turn.get("text", "").lower()
             if "complete" in text or "done" in text or "finished" in text:
@@ -917,7 +912,32 @@ def extract_approval_block(raw):
     return msg
 
 
-def detect_task_state(turns):
+def _has_input_prompt(raw_content):
+    """Check if the raw terminal content shows Claude Code's input prompt,
+    indicating Claude is idle and waiting for user input.
+    The prompt (> or ❯) only appears at the bottom when Claude is done —
+    during active work (thinking, tools), it's replaced by Claude's output."""
+    if not raw_content:
+        return False
+    # Check the last few non-empty lines for the input prompt
+    lines = raw_content.rstrip().split("\n")
+    for line in reversed(lines[-5:]):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Claude Code prompt: lone ">" or "❯", or prompt with cursor artifacts
+        if stripped in (">", "❯", "> ", "❯ "):
+            return True
+        # Prompt might have trailing spaces or cursor positioning chars
+        if re.match(r'^[>❯]\s*$', stripped):
+            return True
+        # If we hit actual content, stop looking
+        if len(stripped) > 3:
+            break
+    return False
+
+
+def detect_task_state(turns, raw_content=""):
     """Detect the current task state from parsed turns.
     Returns: (state, active_tool, detail)
     States: 'working', 'tool', 'approval', 'complete', 'error', 'idle'
@@ -930,11 +950,6 @@ def detect_task_state(turns):
     # Approval prompt
     if last.get("type") == "approval":
         return "approval", None, None
-
-    # If the very last turn is Claude's response text, that means Claude
-    # has finished writing and is waiting for user input — this is completion,
-    # not "working". Only override if there's an active tool or status after it.
-    last_is_claude_response = last.get("type") == "claude"
 
     # Check last few turns for state
     for turn in reversed(turns[-5:]):
@@ -949,19 +964,15 @@ def detect_task_state(turns):
             # Error detection
             if any(w in text for w in ["error:", "failed", "crash", "exception", "fatal"]):
                 return "error", None, turn.get("text", "").split("\n")[0][:60]
-            # Completion detection — Claude wrote a response (explicit or implicit)
+            # Completion detection — explicit keywords
             if any(w in text for w in ["done", "complete", "finished", "all tests pass", "committed", "pushed"]):
                 return "complete", None, turn.get("text", "").split("\n")[0][:60]
-            # If this is the last turn (Claude's final response), it's complete
-            # even without explicit "done" keywords — Claude is waiting for input
-            if turn is last:
+            # If last turn is Claude's response AND the input prompt is visible,
+            # Claude is genuinely done and waiting for input
+            if turn is last and _has_input_prompt(raw_content):
                 return "complete", None, turn.get("text", "").split("\n")[0][:60]
         if turn.get("type") == "status":
             return "working", None, turn.get("text", "")[:60]
-
-    # If last turn was Claude's response but loop didn't catch it, it's complete
-    if last_is_claude_response:
-        return "complete", None, last.get("text", "").split("\n")[0][:60]
 
     # Default: working
     return "working", None, None
@@ -1023,6 +1034,7 @@ def main():
     prev_had_approval = False
     task_start_time = time.time()
     tick_count = 0
+    prev_state = "idle"  # Track state transitions to avoid repeated notifications
 
     # Heartbeat and idle tracking
     iteration_count = 0
@@ -1070,7 +1082,8 @@ def main():
             if turns:
                 formatted = format_turns(turns)
                 if formatted:
-                    state, tool, detail = detect_task_state(turns)
+                    state, tool, detail = detect_task_state(turns, curr_content)
+                    prev_state = state
                     header = f"{header_base} {get_header_for_state(state)}"
                     footer = format_status_footer(state, tool, detail, time.time() - task_start_time, tick_count)
                     display = f"{header}\n\n{formatted}\n\n{footer}"
@@ -1084,7 +1097,7 @@ def main():
 
         if approval_block and not prev_had_approval:
             if live_msg_id:
-                state, _, _ = detect_task_state(parse_terminal(preprocess_tables(prev_content)))
+                state, _, _ = detect_task_state(parse_terminal(preprocess_tables(prev_content)), prev_content)
                 header_with_state = f"{header_base} {get_header_for_state('complete')}"
                 final = live_msg_text
                 # Replace any header variant with the completed one
@@ -1143,13 +1156,39 @@ def main():
             continue
 
         # Detect task state and build status footer
-        state, active_tool, detail = detect_task_state(visible)
+        state, active_tool, detail = detect_task_state(visible, curr_content)
         elapsed_secs = time.time() - task_start_time
         header = f"{header_base} {get_header_for_state(state)}"
         footer = format_status_footer(state, active_tool, detail, elapsed_secs, tick_count)
 
         # Detect if this update warrants a phone notification
+        # Use keyword-based detection OR state transition to "complete"/"error"
         should_notify, notify_summary, is_error = detect_notification(visible)
+
+        # State transition: only notify on transition TO complete/error,
+        # not on every cycle that stays in the same state
+        state_transitioned = state != prev_state and state in ("complete", "error")
+        if state_transitioned and not should_notify:
+            # Trigger notification from state transition even without keywords
+            first_line = ""
+            if visible:
+                for t in reversed(visible):
+                    if t.get("type") == "claude":
+                        first_line = t.get("text", "").split("\n")[0][:80].strip()
+                        break
+            if state == "complete":
+                should_notify = True
+                notify_summary = f"✅ {first_line}" if first_line else "✅ Task complete"
+            elif state == "error":
+                should_notify = True
+                notify_summary = f"❌ {first_line}" if first_line else "❌ Error"
+                is_error = True
+
+        # Don't re-notify if we already notified for this state
+        if should_notify and not state_transitioned and state == prev_state and state in ("complete", "error"):
+            should_notify = False
+
+        prev_state = state
 
         # Prepend short summary for phone notification preview
         if should_notify and notify_summary:
