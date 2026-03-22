@@ -23,8 +23,13 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # Escape backslashes, double quotes, tabs, and newlines for AppleScript
   MESSAGE_ESCAPED=$(printf '%s' "$MESSAGE" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\t' ' ' | tr '\n' ' ')
 
-  # Check if message contains non-ASCII characters (Cyrillic, emoji, CJK, etc.)
-  if printf '%s' "$MESSAGE" | LC_ALL=C grep -q '[^[:print:][:space:]]' 2>/dev/null; then
+  # Use clipboard paste (Cmd+V) instead of character-by-character keystroke when:
+  # 1. Message contains non-ASCII characters (Cyrillic, emoji, CJK, etc.)
+  # 2. Message is longer than 40 chars — keystroke injection for long strings
+  #    can cause the Return key to fire before all characters are processed,
+  #    resulting in text appearing but not being submitted
+  MSG_LEN=${#MESSAGE}
+  if [ "$MSG_LEN" -gt 40 ] || printf '%s' "$MESSAGE" | LC_ALL=C grep -q '[^[:print:][:space:]]' 2>/dev/null; then
     USE_CLIPBOARD=true
   else
     USE_CLIPBOARD=false
@@ -101,6 +106,7 @@ on run argv
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke msg
+                            delay 0.2
                             keystroke return
                         end tell
                     end tell
@@ -155,6 +161,7 @@ on run argv
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke msg
+                            delay 0.2
                             keystroke return
                         end tell
                     end tell
