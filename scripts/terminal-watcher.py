@@ -731,40 +731,6 @@ def edit_message(message_id, text):
     return resp.get("ok", False)
 
 
-def pin_message(message_id):
-    """Pin a message in the Telegram chat."""
-    return telegram_api("pinChatMessage", {
-        "chat_id": CHAT_ID,
-        "message_id": message_id,
-        "disable_notification": "true",
-    })
-
-
-def unpin_message(message_id):
-    """Unpin a specific message in the Telegram chat."""
-    return telegram_api("unpinChatMessage", {
-        "chat_id": CHAT_ID,
-        "message_id": message_id,
-    })
-
-
-# Track pinned error messages for auto-unpin after 5 minutes
-_pinned_messages = []  # list of (message_id, pin_time)
-
-
-def check_unpin_expired():
-    """Unpin messages that were pinned more than 5 minutes ago."""
-    now = time.time()
-    still_pinned = []
-    for msg_id, pin_time in _pinned_messages:
-        if now - pin_time >= 300:
-            unpin_message(msg_id)
-        else:
-            still_pinned.append((msg_id, pin_time))
-    _pinned_messages.clear()
-    _pinned_messages.extend(still_pinned)
-
-
 # Extended error patterns for detection
 ERROR_KEYWORDS = [
     "error:", "failed", "crash", "exception", "fatal",
@@ -805,12 +771,17 @@ def detect_notification(turns):
                 # Extract first meaningful line as summary
                 first_line = text.split("\n")[0][:80].strip()
                 return True, f"❌ {first_line}", True
-            # Task / build completed
+            # Task / build completed — explicit keywords
             if any(w in text_lower for w in [
                 "done", "complete", "finished", "all tests pass",
                 "build succeeded", "committed", "pushed", "deployed",
                 "created successfully", "no errors",
             ]):
+                first_line = text.split("\n")[0][:80].strip()
+                return True, f"✅ {first_line}", False
+            # If this is the last turn (Claude's final response), task is complete
+            # even without explicit keywords — Claude is waiting for user input
+            if turn is last:
                 first_line = text.split("\n")[0][:80].strip()
                 return True, f"✅ {first_line}", False
         if turn.get("type") == "status":
@@ -960,6 +931,11 @@ def detect_task_state(turns):
     if last.get("type") == "approval":
         return "approval", None, None
 
+    # If the very last turn is Claude's response text, that means Claude
+    # has finished writing and is waiting for user input — this is completion,
+    # not "working". Only override if there's an active tool or status after it.
+    last_is_claude_response = last.get("type") == "claude"
+
     # Check last few turns for state
     for turn in reversed(turns[-5:]):
         if turn.get("type") == "tool":
@@ -973,11 +949,19 @@ def detect_task_state(turns):
             # Error detection
             if any(w in text for w in ["error:", "failed", "crash", "exception", "fatal"]):
                 return "error", None, turn.get("text", "").split("\n")[0][:60]
-            # Completion detection
+            # Completion detection — Claude wrote a response (explicit or implicit)
             if any(w in text for w in ["done", "complete", "finished", "all tests pass", "committed", "pushed"]):
+                return "complete", None, turn.get("text", "").split("\n")[0][:60]
+            # If this is the last turn (Claude's final response), it's complete
+            # even without explicit "done" keywords — Claude is waiting for input
+            if turn is last:
                 return "complete", None, turn.get("text", "").split("\n")[0][:60]
         if turn.get("type") == "status":
             return "working", None, turn.get("text", "")[:60]
+
+    # If last turn was Claude's response but loop didn't catch it, it's complete
+    if last_is_claude_response:
+        return "complete", None, last.get("text", "").split("\n")[0][:60]
 
     # Default: working
     return "working", None, None
@@ -1056,9 +1040,6 @@ def main():
                     hf.write(str(int(time.time())))
             except OSError:
                 pass
-
-        # Check for expired pinned messages
-        check_unpin_expired()
 
         curr_content = get_terminal_content()
         if not curr_content or curr_content == prev_content:
@@ -1201,10 +1182,6 @@ def main():
                     live_msg_id = send_message(display, notify=True)
                     if live_msg_id:
                         live_msg_text = display
-                        # Pin error messages for visibility
-                        if is_error:
-                            pin_message(live_msg_id)
-                            _pinned_messages.append((live_msg_id, time.time()))
                 elif edit_message(live_msg_id, display):
                     live_msg_text = display
                 # If edit fails, DON'T send a new message — just wait for next cycle
@@ -1212,10 +1189,6 @@ def main():
             live_msg_id = send_message(display, notify=should_notify)
             if live_msg_id:
                 live_msg_text = display
-                # Pin error messages for visibility
-                if is_error:
-                    pin_message(live_msg_id)
-                    _pinned_messages.append((live_msg_id, time.time()))
 
     if live_msg_id:
         final = live_msg_text
