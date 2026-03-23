@@ -15,6 +15,7 @@ Control any Claude Code terminal session remotely via Telegram. Mirror terminal 
 - **Smart formatting** — Code diffs with syntax highlighting, bash commands in code blocks, tables as mobile cards
 - **Approval workflow** — Approve/reject Claude Code actions with one tap
 - **Voice input** — Send voice messages, review transcription, then send to terminal
+- **Attachments** — Send photos, screenshots, and documents — auto-forwarded to Claude Code for visual/file analysis
 - **Persistent keyboard** — Quick-access buttons: Yes / No / Escape / Status / Continue
 - **Cross-platform** — macOS (Terminal.app), Linux (tmux), Windows (PowerShell + Git Bash)
 
@@ -143,7 +144,8 @@ To target a specific project, set `window_match_string` to a unique string in th
        │                                   ▼
   poll.sh ◄──── HTTP polling ────► Telegram Chat 📱
        │         every 1-3s          (buttons, voice,
-       │                              text input)
+       │                              text, photos,
+       │                              files)
        │
   watchdog.sh
   (monitors poll.sh + watcher,
@@ -152,7 +154,7 @@ To target a specific project, set `window_match_string` to a unique string in th
 
 **Data Flow:**
 - **Terminal → Phone:** `terminal-watcher.py` reads screen via AppleScript/tmux → formats output → sends to Telegram
-- **Phone → Terminal:** `poll.sh` checks Telegram for messages → `type-to-terminal.sh` injects keystrokes
+- **Phone → Terminal:** `poll.sh` checks Telegram for messages, downloads attachments → `type-to-terminal.sh` injects keystrokes
 - **Reliability:** `watchdog.sh` monitors both daemons, auto-restarts if either crashes
 
 ## 📁 Files
@@ -168,6 +170,7 @@ To target a specific project, set `window_match_string` to a unique string in th
 | `scripts/watchdog.sh` | Auto-restart crashed daemons |
 | `scripts/type-to-terminal.sh` | Keystroke injection (AppleScript/tmux/PowerShell) |
 | `scripts/transcribe-voice.sh` | Voice transcription |
+| `scripts/download-file.sh` | Download attachments from Telegram |
 | `scripts/send.sh` | Send a Telegram message |
 | `scripts/check-inbox.sh` | Check for incoming messages |
 | `commands/` | Claude Code slash command templates |
