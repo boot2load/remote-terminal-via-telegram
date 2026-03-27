@@ -89,6 +89,7 @@ if os.path.exists(RUNTIME_ENV):
                     _runtime[_k] = _v
 
 PROJECT_NAME = _runtime.get("PROJECT_NAME") or config.get("project", {}).get("name", "Terminal")
+WINDOW_ID = _runtime.get("WINDOW_ID", "")
 WINDOW_MATCH = _runtime.get("WINDOW_MATCH") or config.get("project", {}).get("window_match_string", "")
 TMUX_SESSION = _runtime.get("TMUX_SESSION") or config.get("project", {}).get("tmux_session", "")
 MAX_MSG_LEN = 3900
@@ -101,6 +102,22 @@ with open(PID_FILE, "w") as f:
 os.chmod(PID_FILE, 0o600)
 
 # ── macOS: AppleScript for Terminal.app ──
+APPLESCRIPT_WITH_ID = '''
+on run argv
+    set targetId to (item 1 of argv) as integer
+    tell application "Terminal"
+        repeat with w in windows
+            try
+                if id of w = targetId then
+                    return contents of tab 1 of w
+                end if
+            end try
+        end repeat
+        return ""
+    end tell
+end run
+'''
+
 APPLESCRIPT_WITH_MATCH = '''
 on run argv
     set matchStr to item 1 of argv
@@ -213,7 +230,13 @@ def get_terminal_content():
     try:
         if IS_MACOS:
             # macOS: AppleScript reads Terminal.app window contents
-            if WINDOW_MATCH:
+            # Prefer window ID (stable) over name matching (fragile)
+            if WINDOW_ID:
+                result = subprocess.run(
+                    ["osascript", "-e", APPLESCRIPT_WITH_ID, "--", WINDOW_ID],
+                    capture_output=True, text=True, timeout=5
+                )
+            elif WINDOW_MATCH:
                 result = subprocess.run(
                     ["osascript", "-e", APPLESCRIPT_WITH_MATCH, "--", WINDOW_MATCH],
                     capture_output=True, text=True, timeout=5

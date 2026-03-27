@@ -111,7 +111,29 @@ send_escape() {
       end if
       set frontmost of w to true
     '
-    if [ -n "$WINDOW_MATCH" ]; then
+    WINDOW_ID="${WINDOW_ID:-}"
+    if [ -n "$WINDOW_ID" ]; then
+      osascript - "$WINDOW_ID" <<ASEOF 2>/dev/null || true
+on run argv
+    set targetId to (item 1 of argv) as integer
+    tell application "Terminal"
+        repeat with w in windows
+            try
+                if id of w = targetId then
+                    ${_ESC_FOCUS}
+                    tell application "System Events"
+                        tell process "Terminal"
+                            key code 53
+                        end tell
+                    end tell
+                    return
+                end if
+            end try
+        end repeat
+    end tell
+end run
+ASEOF
+    elif [ -n "$WINDOW_MATCH" ]; then
       osascript - "$WINDOW_MATCH" <<ASEOF 2>/dev/null || true
 on run argv
     set matchStr to item 1 of argv

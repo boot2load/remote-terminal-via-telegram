@@ -61,7 +61,64 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     set frontmost of w to true
   '
 
-  if [ -n "$WINDOW_MATCH" ]; then
+  WINDOW_ID="${WINDOW_ID:-}"
+
+  if [ -n "$WINDOW_ID" ]; then
+    # Preferred: match by stable window ID
+    if [ "$USE_CLIPBOARD" = true ]; then
+      osascript - "$WINDOW_ID" "$MESSAGE" <<EOF
+on run argv
+    set targetId to (item 1 of argv) as integer
+    set msg to item 2 of argv
+    tell application "Terminal"
+        repeat with w in windows
+            try
+                if id of w = targetId then
+                    ${_FOCUS_PREAMBLE}
+                    set oldClip to the clipboard
+                    set the clipboard to msg
+                    tell application "System Events"
+                        tell process "Terminal"
+                            keystroke "v" using command down
+                            delay 0.2
+                            keystroke return
+                        end tell
+                    end tell
+                    delay 0.1
+                    set the clipboard to oldClip
+                    return
+                end if
+            end try
+        end repeat
+    end tell
+end run
+EOF
+    else
+      osascript - "$WINDOW_ID" "$MESSAGE_ESCAPED" <<EOF
+on run argv
+    set targetId to (item 1 of argv) as integer
+    set msg to item 2 of argv
+    tell application "Terminal"
+        repeat with w in windows
+            try
+                if id of w = targetId then
+                    ${_FOCUS_PREAMBLE}
+                    tell application "System Events"
+                        tell process "Terminal"
+                            keystroke msg
+                            delay 0.2
+                            keystroke return
+                        end tell
+                    end tell
+                    return
+                end if
+            end try
+        end repeat
+    end tell
+end run
+EOF
+    fi
+  elif [ -n "$WINDOW_MATCH" ]; then
     if [ "$USE_CLIPBOARD" = true ]; then
       osascript - "$WINDOW_MATCH" "$MESSAGE" <<EOF
 on run argv
