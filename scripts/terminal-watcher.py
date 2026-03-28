@@ -897,10 +897,14 @@ def extract_approval_block(raw):
         msg += f"📄 {action}\n\n"
 
     if code_lines:
+        # Show up to 60 lines of code in approvals — users need to see the full
+        # diff to make a decision. If it exceeds Telegram's 4096 char limit,
+        # we'll truncate the message itself later.
+        max_code_lines = 60
         is_diff = any(re.match(r'^\s*\d+\s*[+\-]', cl) for cl in code_lines[:10])
         if is_diff:
             diff_lines = []
-            for cl in code_lines[:25]:
+            for cl in code_lines[:max_code_lines]:
                 m = re.match(r'^\s*(\d+)\s*\+\s*(.*)', cl)
                 if m:
                     diff_lines.append(f"+ {m.group(1).rjust(3)} │ {m.group(2)}")
@@ -914,24 +918,30 @@ def extract_approval_block(raw):
                     diff_lines.append(f"  {m.group(1).rjust(3)} │ {m.group(2)}")
             if diff_lines:
                 diff_text = "\n".join(diff_lines)
-                if len(code_lines) > 25:
-                    diff_text += "\n# … (truncated)"
+                if len(code_lines) > max_code_lines:
+                    diff_text += f"\n# … +{len(code_lines) - max_code_lines} more lines"
                 msg += f"```diff\n{diff_text}\n```\n\n"
         else:
             lang = detect_code_lang(file_path or "", code_lines)
             plain_lines = []
-            for cl in code_lines[:25]:
+            for cl in code_lines[:max_code_lines]:
                 m = re.match(r'^\s*\d+\s+(.*)', cl)
                 if m:
                     plain_lines.append(m.group(1))
                 else:
                     plain_lines.append(cl)
             code_text = "\n".join(plain_lines)
-            if len(code_lines) > 25:
-                code_text += "\n// … (truncated)"
+            if len(code_lines) > max_code_lines:
+                code_text += f"\n// … +{len(code_lines) - max_code_lines} more lines"
             msg += f"```{lang or ''}\n{code_text}\n```\n\n"
 
     msg += "\n".join(approval)
+    # Telegram has a 4096 char limit. If we exceed it, truncate the code
+    # block but keep the approval prompt at the end.
+    if len(msg) > TELEGRAM_MAX_LEN:
+        approval_text = "\n".join(approval)
+        budget = TELEGRAM_MAX_LEN - len(approval_text) - 50  # 50 for "truncated" note
+        msg = msg[:budget] + "\n```\n_(truncated)_\n\n" + approval_text
     return msg
 
 
@@ -980,13 +990,13 @@ def detect_task_state(turns, raw_content=""):
             output = turn.get("output", [])
             if not output or output == []:
                 return "tool", turn.get("name", ""), turn.get("arg", "")
-            # Tool with output = probably done with that tool
+            # Tool with output — check for actual execution errors
+            out_text = "\n".join(output).lower() if isinstance(output, list) else str(output).lower()
+            if any(w in out_text for w in ["error:", "exit code 1", "traceback", "fatal", "command failed"]):
+                return "error", turn.get("name", ""), turn.get("arg", "")
             continue
         if turn.get("type") == "claude":
             text = turn.get("text", "").lower()
-            # Error detection
-            if any(w in text for w in ["error:", "failed", "crash", "exception", "fatal"]):
-                return "error", None, turn.get("text", "").split("\n")[0][:60]
             # Completion detection — explicit keywords
             if any(w in text for w in ["done", "complete", "finished", "all tests pass", "committed", "pushed"]):
                 return "complete", None, turn.get("text", "").split("\n")[0][:60]
