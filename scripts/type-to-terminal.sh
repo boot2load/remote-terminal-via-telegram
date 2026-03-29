@@ -80,11 +80,11 @@ on run argv
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke "v" using command down
-                            delay 0.2
+                            delay 0.5
                             keystroke return
                         end tell
                     end tell
-                    delay 0.1
+                    delay 0.3
                     set the clipboard to oldClip
                     return
                 end if
@@ -106,7 +106,7 @@ on run argv
                     tell application "System Events"
                         tell process "Terminal"
                             keystroke msg
-                            delay 0.2
+                            delay 0.5
                             keystroke return
                         end tell
                     end tell
