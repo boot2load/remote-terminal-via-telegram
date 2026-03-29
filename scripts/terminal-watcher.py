@@ -990,10 +990,7 @@ def detect_task_state(turns, raw_content=""):
             output = turn.get("output", [])
             if not output or output == []:
                 return "tool", turn.get("name", ""), turn.get("arg", "")
-            # Tool with output — check for actual execution errors
-            out_text = "\n".join(output).lower() if isinstance(output, list) else str(output).lower()
-            if any(w in out_text for w in ["error:", "exit code 1", "traceback", "fatal", "command failed"]):
-                return "error", turn.get("name", ""), turn.get("arg", "")
+            # Tool completed with output — not an error, just done with this tool
             continue
         if turn.get("type") == "claude":
             text = turn.get("text", "").lower()
